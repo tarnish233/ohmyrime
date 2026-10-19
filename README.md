@@ -38,10 +38,14 @@ patch:
 
 ```bash
 scripts/build.sh      # 首次会下载预编译 librime、Sparkle 和默认方案；本机 7890 端口有代理时自动使用
-scripts/install.sh    # 装到 ~/Library/Input Methods，无需管理员密码，不碰 /Library/Input Methods
+scripts/install.sh    # 装到 /Library/Input Methods（官方位置，会弹一次管理员密码框），只动 Squirrel.app
 ```
 
-首次安装后，需要在「系统设置 → 键盘 → 文字输入 → 输入法 → 编辑… → + → 简体中文 → 鼠须管」添加一次。macOS 27 上命令行启用第三方输入法不生效。以后重装不用再加。
+首次安装后要手动添加一次（以后重装不用再加）：先 ⌘Q 退出「系统设置」再打开 → 键盘 → 文字输入「输入法」→ 编辑… → + → 简体中文 → 鼠须管。
+
+macOS 27 上有两点限制：
+- 命令行启用第三方输入法（`TISEnableInputSource`）会返回成功但不生效，所以必须在系统设置里加一次；
+- `~/Library/Input Methods` 里的输入法系统重建列表时不扫描，会时有时无，所以装到 `/Library/Input Methods`。
 
 卸载：`scripts/uninstall.sh`，默认保留 `~/Library/Rime`；加 `--purge` 一并删除。
 
