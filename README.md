@@ -6,7 +6,8 @@
 |---|---|
 | `squirrel/` | [鼠须管](https://github.com/rime/squirrel) fork（独立 git 仓库，分支 `ohmyrime`），加入卷轴模式 |
 | `rime/` | Rime 用户配置模板，安装时复制到 `~/Library/Rime`（不覆盖已有文件） |
-| `scripts/` | `build.sh` 构建、`install.sh` 安装、`uninstall.sh` 卸载 |
+| `scripts/` | `build.sh` 构建、`install.sh` 安装、`uninstall.sh` 卸载、`rime-ice.sh` 安装或更新雾凇拼音、`rime-smoke.sh` 冒烟测试 |
+| `tools/` | `rime-smoke.c`：用本地 librime 部署配置并打印按键结果 |
 
 ## 卷轴模式
 
@@ -50,6 +51,39 @@ macOS 27 上有两点限制：
 切到鼠须管后只能打英文、没有候选框：说明鼠须管进程没起来（日志里是 `imklaunchagent: LaunchInputMethod() Error, status=-50`）。运行 `open -g "/Library/Input Methods/Squirrel.app"` 即可；`install.sh` 最后会自动执行这一步。注销重新登录后由系统自动启动。
 
 卸载：`scripts/uninstall.sh`，默认保留 `~/Library/Rime`；加 `--purge` 一并删除。
+
+## 输入方案：雾凇拼音
+
+[雾凇拼音](https://github.com/iDvel/rime-ice) 是一整套 Rime 配置：词库、全拼和双拼方案、Lua 扩展脚本（日期、计算器、以词定字等）以及按键设置。
+
+```bash
+scripts/rime-ice.sh             # 下载最新版，备份 ~/Library/Rime 后安装，并通知鼠须管重新部署
+scripts/rime-ice.sh --offline   # 用 .cache 里上次下载的版本
+```
+
+和官方的「清空用户目录再复制」不同，这个脚本：
+- 保留 `*.custom.yaml`、用户词库和同步目录；
+- 不装雾凇拼音的 `squirrel.yaml`：外观沿用本 fork 的配置，因为卷轴模式依赖横排，而它默认是竖排；
+- `custom_phrase.txt` 只在没有时才复制。
+
+每次安装前，`~/Library/Rime`（不含 `build/`）会备份到 `.backup/Rime-时间.tar.gz`。
+
+| 输入 | 结果 |
+|---|---|
+| 拼音后按 `[` / `]` | 以词定字：上屏当前词的第一个 / 最后一个字 |
+| `rq` `sj` `xq` `dt` `ts` | 日期、时间、星期、ISO 时间、时间戳 |
+| `nl` | 农历 |
+| `R123` | 数字和金额的大小写 |
+| `cC1+1` | 计算器 |
+| `U62fc` | Unicode 字符 |
+| `v` 开头 | 符号，见 `symbols_v.yaml` |
+| F4 或 Control+` | 方案选单：切换方案、简繁、全半角等 |
+
+- 翻页：有候选时用 Tab / Shift+Tab，由卷轴模式处理；`-` `=` 也可以，`,` `.` 不翻页。
+- 自定义短语写在 `~/Library/Rime/custom_phrase.txt`。
+- 要用双拼，在 `default.custom.yaml` 的 `schema_list` 里加上对应方案（如 `double_pinyin_flypy`）。
+
+验证配置：`scripts/rime-smoke.sh`。它把 `~/Library/Rime` 复制到 `build/rime-smoke`（不含用户词库），用本地 librime 重新部署，打印几组按键的结果和错误日志数量，不影响正在用的输入法。
 
 ## 开发
 

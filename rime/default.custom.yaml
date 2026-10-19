@@ -1,10 +1,11 @@
-# ohmyrime：输入方案与候选
+# ohmyrime：输入方案与候选（基于雾凇拼音的 default.yaml，这里只写与它不同的地方）
 # 安装脚本只在 ~/Library/Rime 中不存在同名文件时复制，不会覆盖你的修改。
+# 修改后在菜单栏「鼠须管 → 重新部署」生效。
 
 patch:
-  # 默认第一个是朙月拼音（繁体输出）；这里把简化字放在首位
+  # 只启用雾凇拼音（全拼），部署更快。要用双拼就加上对应方案，例如：
+  #   - schema: double_pinyin_flypy   # 小鹤双拼
   schema_list:
-    - schema: luna_pinyin_simp
-    - schema: luna_pinyin
+    - schema: rime_ice
   # 每页候选数 = 卷轴模式每行的个数
   menu/page_size: 5
