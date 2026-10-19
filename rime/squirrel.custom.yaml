@@ -13,26 +13,35 @@ patch:
   # 对齐微信输入法「Tab / Shift+Tab 翻页」：有候选时 Tab 下一行（单行时展开），
   # Shift+Tab 上一行，在第一行时收起
   style/scroll_mode/tab_paging: true
+  # 展开后每列至少这么宽（pt），短词排成整齐的格子，长词仍会撑宽所在的列
+  style/scroll_mode/column_width: 66
 
-  # 外观：macOS 液态玻璃（macOS 26 起；更早的系统是毛玻璃），跟随系统浅色/深色与强调色
+  # 外观：macOS 液态玻璃，照 workspace/wetype 的微信输入法玻璃主题（v10）：
+  # 单行是胶囊形、展开后 18 pt 圆角，系统蓝选中胶囊配白色 Medium 字，
+  # 深色模式给玻璃加一层半透明黑色遮罩；颜色跟随系统浅色 / 深色。
   style/color_scheme: native
   style/translucency: true
-  # regular：磨砂，文字更清楚；clear：更通透
+  # regular：磨砂，文字清楚；clear：更通透
   style/glass_style: regular
-  # 玻璃上再叠一层窗口底色：0 最通透，越大越不透明（0–1）
-  style/glass_opacity: 0.25
-  style/corner_radius: 14
-  style/hilited_corner_radius: 9
-  # 留白：上下 = 圆角 + border_height，左右 = 圆角 + border_width
-  style/border_height: -4
-  style/border_width: -2
-  # 候选之间、展开后行与行之间的间距
-  style/candidate_spacing: 16
-  style/line_spacing: 6
+  # 展开（多行）时的圆角；单行总是胶囊形
+  style/corner_radius: 18
+  style/hilited_corner_radius: 0
+  # 留白：左右 border_width，上下 border_height（单行高 32 pt）
+  style/border_width: 9.5
+  style/border_height: 4.8
+  # 候选之间的间距；展开后行与行的间距（行距 32 pt）
+  style/candidate_spacing: 13
+  style/line_spacing: 9.6
 
-  # 字体：system = 系统字体（英文数字用 SF，中文用苹方）
-  style/font_face: "system, PingFang SC"
+  # 字体：苹方 16，选中项用 Medium，序号和候选同字号
+  style/font_face: "PingFang SC"
+  style/hilited_font_face: "PingFangSC-Medium"
   style/font_point: 16
-  style/label_font_point: 13
+  style/label_font_point: 16
   style/comment_font_point: 13
-  style/candidate_format: "[label] [candidate] [comment]"
+  style/candidate_format: "[label][candidate] [comment]"
+  # 文字整体下移 1.5 pt，和微信输入法的视觉居中一致
+  style/base_offset: -1.5
+
+  # 动效：展开 0.20 s、收起 0.16 s，文字淡入；系统开启「减弱动态效果」时不播放
+  style/motion: true

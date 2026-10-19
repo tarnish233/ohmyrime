@@ -37,28 +37,42 @@ patch:
 
 ## 外观：液态玻璃
 
-macOS 26 起候选框用系统的液态玻璃（Liquid Glass）材质，更早的系统是毛玻璃。颜色跟随系统浅色 / 深色和强调色，高亮是强调色圆角块配白字，和菜单的选中样式一致。字体是系统字体：英文数字用 SF，中文用苹方。
+照 `workspace/wetype` 里微信输入法的玻璃主题（v10）做，尺寸逐项对过它的实拍截图：
+
+- 背景：macOS 26 起用系统液态玻璃（`NSGlassEffectView`，regular 样式），更早的系统是毛玻璃。单行是胶囊形，展开后是 18 pt 圆角。深色模式在玻璃上加 50% 黑色遮罩，亮背景上的白字也清楚。系统开了「减少透明度」时，改用不透明底色。
+- 选中项：系统蓝胶囊（0.5 pt 白边、顶部微光），配白色苹方 Medium。
+- 其余文字：苹方 Regular 16，浅色 #282828、深色 #E8E8E8。序号是浅灰（#828282 / #B4B4B4），和候选同字号，并占固定宽度，所以每个词都从同一位置开始。
+- 尺寸：单行高 32 pt，选中胶囊高 26 pt；展开后行距 32 pt、列宽至少 66 pt。行高固定，emoji 不会把行撑高。
+- 动效：展开、收起时，窗口按 0.20 s / 0.16 s 和微信输入法相同的缓动曲线伸缩，内容固定在顶部。文字从 30% 不透明度淡入，展开时下移 4 pt 落位。动画中途反向，会从当前位置接着走。系统开了「减弱动态效果」时不播放。
+- emoji 一律用彩色字体：苹方里 🉑 🉐 等是黑白字形。
 
 可调的项（`~/Library/Rime/squirrel.custom.yaml`，改完「重新部署」）：
 
 | 配置 | 现在 | 说明 |
 |---|---|---|
+| `style/translucency` | `true` | 配合原生配色 `color_scheme: native` 即为上面的液态玻璃外观；关掉回到不透明的系统窗口底色 |
 | `style/glass_style` | `regular` | `regular` 磨砂、文字清楚；`clear` 更通透 |
-| `style/glass_opacity` | `0.25` | 玻璃上再叠一层窗口底色，0 最通透，越大越不透明（0–1） |
-| `style/corner_radius` / `hilited_corner_radius` | `14` / `9` | 候选框 / 高亮块圆角 |
-| `style/candidate_spacing` | `16` | 候选之间的间距（点），高亮块向两边各占一半 |
-| `style/line_spacing` | `6` | 展开后行与行的间距 |
-| `style/border_height` / `border_width` | `-4` / `-2` | 留白：上下 = 圆角 + border_height，左右 = 圆角 + border_width |
-| `style/font_face` | `"system, PingFang SC"` | `system` 是系统字体，`system-medium` 等可指定字重；也可以写字体名，如 `"LXGW WenKai"` |
-| `style/font_point` / `label_font_point` / `comment_font_point` | `16` / `13` / `13` | 候选 / 序号 / 注释字号 |
-| `style/translucency` | `true` | 关掉就回到不透明的系统窗口底色 |
+| `style/corner_radius` | `18` | 展开（多行）时的圆角；单行总是胶囊形 |
+| `style/border_width` / `border_height` | `9.5` / `4.8` | 左右 / 上下留白 |
+| `style/candidate_spacing` | `13` | 候选之间的间距（pt） |
+| `style/line_spacing` | `9.6` | 展开后行与行的间距 |
+| `style/scroll_mode/column_width` | `66` | 展开后每列的最小宽度，短词排成整齐的格子 |
+| `style/font_face` / `hilited_font_face` | 苹方 / 苹方 Medium | 候选字体 / 选中项字体；`system` 表示系统字体（SF + 苹方） |
+| `style/font_point` / `label_font_point` / `comment_font_point` | `16` / `16` / `13` | 候选 / 序号 / 注释字号 |
+| `style/candidate_format` | `"[label][candidate] [comment]"` | 序号紧贴候选 |
+| `style/base_offset` | `-1.5` | 文字在面板里整体上下移动（负数向下），选中胶囊不动 |
+| `style/motion` | `true` | 展开 / 收起动效 |
 
-`glass_style`、`glass_opacity`、`candidate_spacing` 和 `system` 字体是本 fork 新增的，上游鼠须管不认识。
+`glass_style`、`hilited_font_face`、`candidate_spacing`、`scroll_mode/column_width`、`motion` 和 `system` 字体是本 fork 新增的。原生配色加 `translucency` 的外观、液态玻璃下 `corner_radius` / `border_*` / `base_offset` 的含义，也和上游鼠须管不同。
 
-预览：`squirrel/tests/scroll_mode/preview.sh [某个 squirrel.custom.yaml] [输出目录]`。
-- 它用 `~/Library/Rime` 的一份副本和给定的配置，在屏幕上显示几秒钟测试窗口和真实的候选框，分别截浅色和深色下的单行、展开、带注释三种状态，默认输出到 `squirrel/build/preview/out`。
-- 只截测试窗口所在的区域，而且截图前会检查这块区域只有测试程序自己的窗口，有别的窗口挡着就跳过，不会拍到其它内容。
-- 多张截图可以用 `squirrel/tests/scroll_mode/contact-sheet.swift` 拼成一张对比图。
+预览和对比工具：
+- `squirrel/tests/scroll_mode/preview.sh [某个 squirrel.custom.yaml] [输出目录]`：用 `~/Library/Rime` 的一份副本和给定配置，在屏幕上显示几秒钟测试窗口和真实候选框。
+  - 截取浅色和深色下的单行、展开、带注释三种状态，以及展开 / 收起的动画中间帧；
+  - 打印动画过程中的窗口尺寸；
+  - 默认输出到 `squirrel/build/preview/out`。
+- 截图前会检查截图区域里只有测试程序自己的窗口，有别的窗口挡着就跳过，不会拍到其它内容。
+- `squirrel/tests/scroll_mode/measure.py <截图> [x y 宽 高]`：量出截图里蓝色胶囊、白字、序号与候选之间的间距，可以拿来和微信输入法的截图对比。
+- `squirrel/tests/scroll_mode/contact-sheet.swift`：把多张截图拼成一张对比图。
 
 ## 构建与安装
 
