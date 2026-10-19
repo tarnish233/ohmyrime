@@ -1,0 +1,15 @@
+# ohmyrime：鼠须管外观与卷轴模式
+# 安装脚本只在 ~/Library/Rime 中不存在同名文件时复制，不会覆盖你的修改。
+# 修改后在菜单栏「鼠须管 → 重新部署」生效（或 Control+Option+`）。
+
+patch:
+  # 卷轴模式只在横排单行候选（linear + horizontal）下生效
+  style/candidate_list_layout: linear
+  style/text_orientation: horizontal
+
+  style/scroll_mode/enable: true
+  # 展开后最多显示的行数（每行 = 一页候选，页内个数见 default.custom.yaml 的 menu/page_size）
+  style/scroll_mode/max_rows: 5
+  # 对齐微信输入法「Tab / Shift+Tab 翻页」：有候选时 Tab 下一行（单行时展开），
+  # Shift+Tab 上一行，在第一行时收起
+  style/scroll_mode/tab_paging: true

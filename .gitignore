@@ -1,0 +1,5 @@
+# 鼠须管 fork 是独立仓库
+/squirrel/
+# 本机备份（输入法偏好设置等）
+/.backup/
+.DS_Store
