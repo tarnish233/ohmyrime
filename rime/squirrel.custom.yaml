@@ -13,3 +13,26 @@ patch:
   # 对齐微信输入法「Tab / Shift+Tab 翻页」：有候选时 Tab 下一行（单行时展开），
   # Shift+Tab 上一行，在第一行时收起
   style/scroll_mode/tab_paging: true
+
+  # 外观：macOS 液态玻璃（macOS 26 起；更早的系统是毛玻璃），跟随系统浅色/深色与强调色
+  style/color_scheme: native
+  style/translucency: true
+  # regular：磨砂，文字更清楚；clear：更通透
+  style/glass_style: regular
+  # 玻璃上再叠一层窗口底色：0 最通透，越大越不透明（0–1）
+  style/glass_opacity: 0.25
+  style/corner_radius: 14
+  style/hilited_corner_radius: 9
+  # 留白：上下 = 圆角 + border_height，左右 = 圆角 + border_width
+  style/border_height: -4
+  style/border_width: -2
+  # 候选之间、展开后行与行之间的间距
+  style/candidate_spacing: 16
+  style/line_spacing: 6
+
+  # 字体：system = 系统字体（英文数字用 SF，中文用苹方）
+  style/font_face: "system, PingFang SC"
+  style/font_point: 16
+  style/label_font_point: 13
+  style/comment_font_point: 13
+  style/candidate_format: "[label] [candidate] [comment]"

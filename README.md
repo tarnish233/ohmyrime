@@ -4,7 +4,7 @@
 
 | 目录 | 内容 |
 |---|---|
-| `squirrel/` | [鼠须管](https://github.com/rime/squirrel) fork（独立 git 仓库，分支 `ohmyrime`），加入卷轴模式 |
+| `squirrel/` | [鼠须管](https://github.com/rime/squirrel) fork（独立 git 仓库，分支 `ohmyrime`），加入卷轴模式和液态玻璃外观 |
 | `rime/` | Rime 用户配置模板，安装时复制到 `~/Library/Rime`（不覆盖已有文件） |
 | `scripts/` | `build.sh` 构建、`install.sh` 安装、`uninstall.sh` 卸载、`rime-ice.sh` 安装或更新雾凇拼音、`rime-smoke.sh` 冒烟测试 |
 | `tools/` | `rime-smoke.c`：用本地 librime 部署配置并打印按键结果 |
@@ -34,6 +34,31 @@ patch:
 ```
 
 每行候选数就是每页候选数：`default.custom.yaml` 里的 `menu/page_size`。
+
+## 外观：液态玻璃
+
+macOS 26 起候选框用系统的液态玻璃（Liquid Glass）材质，更早的系统是毛玻璃。颜色跟随系统浅色 / 深色和强调色，高亮是强调色圆角块配白字，和菜单的选中样式一致。字体是系统字体：英文数字用 SF，中文用苹方。
+
+可调的项（`~/Library/Rime/squirrel.custom.yaml`，改完「重新部署」）：
+
+| 配置 | 现在 | 说明 |
+|---|---|---|
+| `style/glass_style` | `regular` | `regular` 磨砂、文字清楚；`clear` 更通透 |
+| `style/glass_opacity` | `0.25` | 玻璃上再叠一层窗口底色，0 最通透，越大越不透明（0–1） |
+| `style/corner_radius` / `hilited_corner_radius` | `14` / `9` | 候选框 / 高亮块圆角 |
+| `style/candidate_spacing` | `16` | 候选之间的间距（点），高亮块向两边各占一半 |
+| `style/line_spacing` | `6` | 展开后行与行的间距 |
+| `style/border_height` / `border_width` | `-4` / `-2` | 留白：上下 = 圆角 + border_height，左右 = 圆角 + border_width |
+| `style/font_face` | `"system, PingFang SC"` | `system` 是系统字体，`system-medium` 等可指定字重；也可以写字体名，如 `"LXGW WenKai"` |
+| `style/font_point` / `label_font_point` / `comment_font_point` | `16` / `13` / `13` | 候选 / 序号 / 注释字号 |
+| `style/translucency` | `true` | 关掉就回到不透明的系统窗口底色 |
+
+`glass_style`、`glass_opacity`、`candidate_spacing` 和 `system` 字体是本 fork 新增的，上游鼠须管不认识。
+
+预览：`squirrel/tests/scroll_mode/preview.sh [某个 squirrel.custom.yaml] [输出目录]`。
+- 它用 `~/Library/Rime` 的一份副本和给定的配置，在屏幕上显示几秒钟测试窗口和真实的候选框，分别截浅色和深色下的单行、展开、带注释三种状态，默认输出到 `squirrel/build/preview/out`。
+- 只截测试窗口所在的区域，而且截图前会检查这块区域只有测试程序自己的窗口，有别的窗口挡着就跳过，不会拍到其它内容。
+- 多张截图可以用 `squirrel/tests/scroll_mode/contact-sheet.swift` 拼成一张对比图。
 
 ## 构建与安装
 
@@ -89,7 +114,7 @@ scripts/rime-ice.sh --offline   # 用 .cache 里上次下载的版本
 
 - `squirrel` 仓库的分支：
   - `scroll-mode`：卷轴模式功能和测试，基于上游 master，可以单独提 PR；
-  - `ohmyrime`：在 `scroll-mode` 之上，加上 fork 专用改动：按实际安装位置注册输入源、关闭 Sparkle 自动更新。
+  - `ohmyrime`：在 `scroll-mode` 之上，加上 fork 专用改动：按实际安装位置注册输入源、关闭 Sparkle 自动更新，以及液态玻璃外观和预览工具。
 - 测试：先 `make release`，再运行 `squirrel/tests/scroll_mode/run.sh`。
   - 它用真实 librime 和临时用户目录驱动真实的 `SquirrelInputController` / `SquirrelPanel`，检查翻页、展开、选词。
   - 面板截图输出到 `squirrel/build/scroll-harness/out`。
