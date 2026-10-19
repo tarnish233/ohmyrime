@@ -8,6 +8,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 app="$root/squirrel/build/Build/Products/Release/Squirrel.app"
+settings_app="$root/build/settings/鼠须管设置.app"
 dest="/Library/Input Methods/Squirrel.app"
 user_copy="$HOME/Library/Input Methods/Squirrel.app"
 rime_dir="$HOME/Library/Rime"
@@ -89,7 +90,20 @@ for check in 1 2 3 4; do
 done
 squirrel --enable-input-source
 
-# 6. 在后台启动一次：新装的输入法在本次登录内可能拉不起来（imklaunchagent 报
+# 6. 「鼠须管设置」装进「应用程序」：管理员用户可直接写 /Applications，不用密码；
+#    写不了时装到 ~/Applications。鼠须管菜单里的「设置…」按 bundle ID 找到它。
+if [ -d "$settings_app" ]; then
+  apps_dir=/Applications
+  [ -w "$apps_dir" ] || { apps_dir="$HOME/Applications"; mkdir -p "$apps_dir"; }
+  settings_dest="$apps_dir/鼠须管设置.app"
+  pkill -f "$settings_dest/Contents/MacOS/SquirrelSettings" 2>/dev/null || true
+  rm -rf "$settings_dest"
+  ditto "$settings_app" "$settings_dest"
+  "$lsregister" -f "$settings_dest" 2>/dev/null || true
+  echo "已安装：$settings_dest"
+fi
+
+# 7. 在后台启动一次：新装的输入法在本次登录内可能拉不起来（imklaunchagent 报
 #    LaunchInputMethod() Error -50，表现为只能打英文）。启动后它会自己登记连接端点，
 #    并完成首次部署；下次登录后由系统自动启动。
 open -g "$dest"
@@ -103,4 +117,5 @@ else
   echo "如果菜单里有鼠须管却选不中，等半分钟后重新注册："
   echo "  '$dest/Contents/MacOS/Squirrel' --register-input-source"
 fi
-echo "修改 ~/Library/Rime 下的配置后，用「鼠须管 → 重新部署」生效。"
+echo "设置：鼠须管菜单 →「设置…」，或在「应用程序」里打开「鼠须管设置」，改完自动生效。"
+echo "手动修改 ~/Library/Rime 下的配置后，用「鼠须管 → 重新部署」生效。"

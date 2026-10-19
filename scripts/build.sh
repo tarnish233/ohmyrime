@@ -26,3 +26,6 @@ fi
 
 make release ARCHS="$(uname -m)"
 echo "构建完成：$root/squirrel/build/Build/Products/Release/Squirrel.app"
+
+# 设置 App 用鼠须管自己的候选框代码做预览，所以跟着鼠须管一起构建
+bash "$root/scripts/build-settings.sh"

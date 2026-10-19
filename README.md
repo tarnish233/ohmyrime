@@ -5,9 +5,32 @@
 | 目录 | 内容 |
 |---|---|
 | `squirrel/` | [鼠须管](https://github.com/rime/squirrel) fork（独立 git 仓库，分支 `ohmyrime`），加入卷轴模式和液态玻璃外观 |
+| `settings/` | 「鼠须管设置」：图形界面的设置 App（SwiftUI），改完自动生效 |
 | `rime/` | Rime 用户配置模板，安装时复制到 `~/Library/Rime`（不覆盖已有文件） |
-| `scripts/` | `build.sh` 构建、`install.sh` 安装、`uninstall.sh` 卸载、`rime-ice.sh` 安装或更新雾凇拼音、`rime-smoke.sh` 冒烟测试 |
+| `scripts/` | `build.sh` 构建（含设置 App）、`install.sh` 安装、`uninstall.sh` 卸载、`rime-ice.sh` 安装或更新雾凇拼音、`rime-smoke.sh` 冒烟测试、`test-settings.sh` 设置 App 的测试 |
 | `tools/` | `rime-smoke.c`：用本地 librime 部署配置并打印按键结果；`tis-props.swift`：查看系统输入法框架里的输入源状态（只读） |
+
+## 设置 App：鼠须管设置
+
+不用再手改 YAML：鼠须管菜单里的「设置…」（⌃⌥,），或「应用程序」里的「鼠须管设置」。改完停手约 0.7 秒自动保存，鼠须管随即重新部署：外观立刻生效，方案改动要几秒。工具栏右上角显示状态（已生效 / 部署中 / 失败时的错误）。
+
+| 页面 | 能设置的 | 写到 |
+|---|---|---|
+| 外观 | 液态玻璃 / 系统配色 / 预设配色，玻璃质感，一行或一列、横排或竖排，卷轴模式（行数、Tab 翻页、列宽），字体和字号、选中项字重，候选格式，圆角、留白、间距、行距，动效，菜单栏图标，部署通知；顶部是实时预览 | `squirrel.custom.yaml` |
+| 输入 | 启用哪些方案和顺序，每页候选数，左右 Shift / Control / Caps Lock 怎样切换中英，翻页键（- = / , . / [ ] / Tab），以词定字，方案选单快捷键 | `default.custom.yaml` |
+| 雾凇拼音 | 新输入框的默认状态（中英、标点、简繁、Emoji、全角、单字优先），模糊音（z/zh、n/l、an/ang 等 10 组） | `rime_ice.custom.yaml`，启用的双拼方案也一起改 |
+| 应用 | 按应用：默认英文、不内嵌编码、Vim 模式；可添加、移除应用 | `squirrel.custom.yaml` 的 `app_options` |
+| 短语 | 自定义短语表格：短语、编码、权重，可搜索 | `custom_phrase.txt` |
+| 词库与部署 | 用户词库大小，同步文件夹（可设到 iCloud 云盘）、立即同步、备份用户文件夹，部署状态和错误日志 | `installation.yaml` 的 `sync_dir` |
+
+- 预览：顶部的候选框就是鼠须管自己的候选框代码画的（编进了设置 App），用的是窗口里当前的设置，没保存的也算，和实际打字时一模一样，包括玻璃、字体和动效。可以切「单行 / 展开」和「浅色 / 深色」。
+- 怎么写配置：只改动用到的那几项，其他行、注释、空行原样保留。原来就在文件里的行就地修改；设回默认值时，App 自己加的项会删掉，你写的行会留着。
+  - 写之前用 librime 自己的 YAML 解析器检查一遍，读不了就不写。
+  - 每次打开 App 后第一次改动之前，原文件备份到 `~/Library/Application Support/鼠须管设置/Backups/<时间>/`，保留最近 20 次。
+- 用文本编辑器改过配置，切回 App 时会自动重新读取。
+- 部署：App 通知鼠须管「安静地」重新部署（不弹通知），鼠须管部署完回报结果。librime 按秒比较文件时间，同一秒内的第二次保存会被当成没改，所以 App 会等过了上次部署的那一秒再保存，必要时再请求一次。
+
+测试：`scripts/test-settings.sh` 在 `~/Library/Rime` 的副本上跑模型测试（YAML 往返、逐行编辑、各页设置），再用 librime 部署这份副本，打字确认改动生效（每页 7 个、模糊音、翻页键、自定义短语），不碰真正的配置。截图检查：`SQUIRREL_SETTINGS_USER_DIR=<副本> SQUIRREL_SETTINGS_NO_DEPLOY=1 SQUIRREL_SETTINGS_SNAPSHOT=<输出目录> "/Applications/鼠须管设置.app/Contents/MacOS/SquirrelSettings"`，只截这个 App 自己的窗口。
 
 ## 卷轴模式
 
@@ -79,8 +102,9 @@ patch:
 ## 构建与安装
 
 ```bash
-scripts/build.sh      # 首次会下载预编译 librime、Sparkle 和默认方案；本机 7890 端口有代理时自动使用
-scripts/install.sh    # 装到 /Library/Input Methods（官方位置，会弹一次管理员密码框），只动 Squirrel.app
+scripts/build.sh      # 首次会下载预编译 librime、Sparkle 和默认方案；本机 7890 端口有代理时自动使用；最后构建设置 App
+scripts/install.sh    # 鼠须管装到 /Library/Input Methods（官方位置，会弹一次管理员密码框），只动 Squirrel.app；
+                      # 「鼠须管设置」装到 /Applications（不用密码）
 ```
 
 首次安装后要手动添加一次（以后重装不用再加）：先 ⌘Q 退出「系统设置」再打开 → 键盘 → 文字输入「输入法」→ 编辑… → + → 简体中文 → 鼠须管。
@@ -93,7 +117,7 @@ macOS 27 上有两点限制：
 
 菜单里有鼠须管却选不中（系统设置里也可能加不上）：系统的输入法缓存把它丢了，常见于刚替换完 app。运行 `"/Library/Input Methods/Squirrel.app/Contents/MacOS/Squirrel" --register-input-source` 重新注册即可。`install.sh` 会在安装后确认几次，丢了就自动重新注册。要查看系统是否认得它，运行 `swiftc tools/tis-props.swift -o build/tis-props && build/tis-props rime`：能列出 `im.rime.inputmethod.Squirrel.Hans` 就说明系统认得。
 
-卸载：`scripts/uninstall.sh`，默认保留 `~/Library/Rime`；加 `--purge` 一并删除。
+卸载：`scripts/uninstall.sh`，同时删掉「鼠须管设置」，默认保留 `~/Library/Rime`；加 `--purge` 一并删除。
 
 ## 输入方案：雾凇拼音
 
@@ -132,7 +156,7 @@ scripts/rime-ice.sh --offline   # 用 .cache 里上次下载的版本
 
 - `squirrel` 仓库的分支：
   - `scroll-mode`：卷轴模式功能和测试，基于上游 master，可以单独提 PR；
-  - `ohmyrime`：在 `scroll-mode` 之上，加上 fork 专用改动：按实际安装位置注册输入源、关闭 Sparkle 自动更新，以及液态玻璃外观和预览工具。
+  - `ohmyrime`：在 `scroll-mode` 之上，加上 fork 专用改动：按实际安装位置注册输入源、关闭 Sparkle 自动更新、液态玻璃外观和预览工具，以及配合设置 App 的部分（菜单「设置…」、安静部署和部署完成通知 `SquirrelDeployDidFinishNotification`、`SquirrelConfig.open(yaml:)`）。
 - 测试：先 `make release`，再运行 `squirrel/tests/scroll_mode/run.sh`。
   - 它用真实 librime 和临时用户目录驱动真实的 `SquirrelInputController` / `SquirrelPanel`，检查翻页、展开、选词。
   - 面板截图输出到 `squirrel/build/scroll-harness/out`。

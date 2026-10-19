@@ -25,6 +25,15 @@ if [ -d "$dest" ]; then
   echo "已删除：$dest"
 fi
 
+for settings_app in "/Applications/鼠须管设置.app" "$HOME/Applications/鼠须管设置.app"; do
+  if [ -d "$settings_app" ]; then
+    pkill -f "$settings_app/Contents/MacOS/SquirrelSettings" 2>/dev/null || true
+    "$lsregister" -u "$settings_app" 2>/dev/null || true
+    rm -rf "$settings_app"
+    echo "已删除：$settings_app"
+  fi
+done
+
 if [ "${1:-}" = "--purge" ]; then
   rm -rf "$HOME/Library/Rime"
   echo "已删除：$HOME/Library/Rime"
