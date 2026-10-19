@@ -47,6 +47,8 @@ macOS 27 上有两点限制：
 - 命令行启用第三方输入法（`TISEnableInputSource`）会返回成功但不生效，所以必须在系统设置里加一次；
 - `~/Library/Input Methods` 里的输入法系统重建列表时不扫描，会时有时无，所以装到 `/Library/Input Methods`。
 
+切到鼠须管后只能打英文、没有候选框：说明鼠须管进程没起来（日志里是 `imklaunchagent: LaunchInputMethod() Error, status=-50`）。运行 `open -g "/Library/Input Methods/Squirrel.app"` 即可；`install.sh` 最后会自动执行这一步。注销重新登录后由系统自动启动。
+
 卸载：`scripts/uninstall.sh`，默认保留 `~/Library/Rime`；加 `--purge` 一并删除。
 
 ## 开发

@@ -66,6 +66,11 @@ squirrel --help > /dev/null
 squirrel --register-input-source
 squirrel --enable-input-source
 
+# 6. 在后台启动一次：新装的输入法在本次登录内可能拉不起来（imklaunchagent 报
+#    LaunchInputMethod() Error -50，表现为只能打英文）。启动后它会自己登记连接端点，
+#    并完成首次部署；下次登录后由系统自动启动。
+open -g "$dest"
+
 echo
 if defaults read com.apple.inputsources AppleEnabledThirdPartyInputSources 2>/dev/null | grep -q "im.rime.inputmethod.Squirrel"; then
   echo "完成。在菜单栏输入法菜单中选择「鼠须管」即可使用，首次使用会自动部署（几秒钟）。"
