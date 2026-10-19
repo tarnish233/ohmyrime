@@ -27,13 +27,24 @@ fi
 # 构建目录里的副本也会被 LaunchServices 登记；取消登记，避免系统找错应用
 "$lsregister" -u "$app" 2>/dev/null || true
 
-# 3. 复制到 /Library/Input Methods（弹出管理员密码框）
+# 3. 复制到 /Library/Input Methods（弹出管理员密码框）。
+#    先完整复制到同目录的临时文件夹，再改名对调。如果先删后拷，app 不在的那几秒里
+#    系统重建输入法缓存，就会把鼠须管丢掉，表现为菜单里选不了鼠须管。
+#    用 ditto 而不是 rsync：Contents/MacOS/rime-install 是脚本，它的签名存放在扩展属性里。
 /usr/bin/osascript - "$app" "$dest" <<'APPLESCRIPT'
 on run argv
   set src to item 1 of argv
   set dst to item 2 of argv
   if dst is not "/Library/Input Methods/Squirrel.app" then error "unexpected destination: " & dst
-  do shell script "/bin/rm -rf " & quoted form of dst & " && /usr/bin/ditto " & quoted form of src & " " & quoted form of dst & " && /usr/sbin/chown -R root:wheel " & quoted form of dst with prompt "ohmyrime 要把鼠须管安装到 /Library/Input Methods。" with administrator privileges
+  set newCopy to quoted form of "/Library/Input Methods/.Squirrel.app.new"
+  set oldCopy to quoted form of "/Library/Input Methods/.Squirrel.app.old"
+  set cmd to "set -e; /bin/rm -rf " & newCopy & " " & oldCopy
+  set cmd to cmd & "; /usr/bin/ditto " & quoted form of src & " " & newCopy
+  set cmd to cmd & "; /usr/sbin/chown -R root:wheel " & newCopy
+  set cmd to cmd & "; if [ -e " & quoted form of dst & " ]; then /bin/mv " & quoted form of dst & " " & oldCopy & "; fi"
+  set cmd to cmd & "; /bin/mv " & newCopy & " " & quoted form of dst
+  set cmd to cmd & "; /bin/rm -rf " & oldCopy
+  do shell script cmd with prompt "ohmyrime 要把鼠须管安装到 /Library/Input Methods。" with administrator privileges
 end run
 APPLESCRIPT
 "$lsregister" -f "$dest"
@@ -64,6 +75,18 @@ squirrel() {
 }
 squirrel --help > /dev/null
 squirrel --register-input-source
+# 替换 app 后，系统会在十几秒内重建输入法缓存，偶尔会把刚注册的鼠须管丢掉。过一会儿再确认
+# 几次：系统里看不到已启用的鼠须管时，--register-input-source 会重新注册；看得到时只打印
+# 「already registered」。
+registered=false
+for check in 1 2 3 4; do
+  sleep 6
+  output=$(squirrel --register-input-source)
+  if [[ $output == *"already registered"* ]]; then
+    registered=true
+    break
+  fi
+done
 squirrel --enable-input-source
 
 # 6. 在后台启动一次：新装的输入法在本次登录内可能拉不起来（imklaunchagent 报
@@ -72,10 +95,12 @@ squirrel --enable-input-source
 open -g "$dest"
 
 echo
-if defaults read com.apple.inputsources AppleEnabledThirdPartyInputSources 2>/dev/null | grep -q "im.rime.inputmethod.Squirrel"; then
+if $registered; then
   echo "完成。在菜单栏输入法菜单中选择「鼠须管」即可使用，首次使用会自动部署（几秒钟）。"
 else
   echo "完成。如果输入法菜单里还没有「鼠须管」，手动添加一次（之后重装不用再加）："
   echo "  先 ⌘Q 退出「系统设置」再打开 → 键盘 → 文字输入「输入法」→ 编辑… → 左下角 + → 简体中文 → 鼠须管 → 添加"
+  echo "如果菜单里有鼠须管却选不中，等半分钟后重新注册："
+  echo "  '$dest/Contents/MacOS/Squirrel' --register-input-source"
 fi
 echo "修改 ~/Library/Rime 下的配置后，用「鼠须管 → 重新部署」生效。"

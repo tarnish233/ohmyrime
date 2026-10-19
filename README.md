@@ -7,7 +7,7 @@
 | `squirrel/` | [鼠须管](https://github.com/rime/squirrel) fork（独立 git 仓库，分支 `ohmyrime`），加入卷轴模式和液态玻璃外观 |
 | `rime/` | Rime 用户配置模板，安装时复制到 `~/Library/Rime`（不覆盖已有文件） |
 | `scripts/` | `build.sh` 构建、`install.sh` 安装、`uninstall.sh` 卸载、`rime-ice.sh` 安装或更新雾凇拼音、`rime-smoke.sh` 冒烟测试 |
-| `tools/` | `rime-smoke.c`：用本地 librime 部署配置并打印按键结果 |
+| `tools/` | `rime-smoke.c`：用本地 librime 部署配置并打印按键结果；`tis-props.swift`：查看系统输入法框架里的输入源状态（只读） |
 
 ## 卷轴模式
 
@@ -74,6 +74,8 @@ macOS 27 上有两点限制：
 - `~/Library/Input Methods` 里的输入法系统重建列表时不扫描，会时有时无，所以装到 `/Library/Input Methods`。
 
 切到鼠须管后只能打英文、没有候选框：说明鼠须管进程没起来（日志里是 `imklaunchagent: LaunchInputMethod() Error, status=-50`）。运行 `open -g "/Library/Input Methods/Squirrel.app"` 即可；`install.sh` 最后会自动执行这一步。注销重新登录后由系统自动启动。
+
+菜单里有鼠须管却选不中（系统设置里也可能加不上）：系统的输入法缓存把它丢了，常见于刚替换完 app。运行 `"/Library/Input Methods/Squirrel.app/Contents/MacOS/Squirrel" --register-input-source` 重新注册即可。`install.sh` 会在安装后确认几次，丢了就自动重新注册。要查看系统是否认得它，运行 `swiftc tools/tis-props.swift -o build/tis-props && build/tis-props rime`：能列出 `im.rime.inputmethod.Squirrel.Hans` 就说明系统认得。
 
 卸载：`scripts/uninstall.sh`，默认保留 `~/Library/Rime`；加 `--purge` 一并删除。
 
