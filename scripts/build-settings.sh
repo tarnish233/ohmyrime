@@ -16,7 +16,7 @@ while IFS= read -r file; do sources+=("$file"); done < <(find settings/Sources -
 swiftc -swift-version 5 -O -parse-as-library -enable-bare-slash-regex -target arm64-apple-macos14.0 \
   -import-objc-header "$sq/sources/Squirrel-Bridging-Header.h" -I "$sq/librime/src" -I "$sq/librime/include" \
   -L "$sq/lib" -lrime.1 -F "$sq/Frameworks" -framework Sparkle \
-  -framework AppKit -framework SwiftUI -framework InputMethodKit -framework Carbon -framework UserNotifications \
+  -framework AppKit -framework SwiftUI -framework InputMethodKit -framework Carbon -framework UserNotifications -framework ScreenCaptureKit \
   -Xlinker -rpath -Xlinker @executable_path/../Frameworks \
   "$sq"/sources/{BridgingFunctions,InputSource,MacOSKeyCodes,ReservedProperty,SquirrelApplicationDelegate,SquirrelConfig,SquirrelInputController,SquirrelPanel,SquirrelScrollMode,SquirrelTheme,SquirrelView}.swift \
   "${sources[@]}" -o "$app/Contents/MacOS/SquirrelSettings" 2>&1 | { grep -v -E "SwiftUICore|^ld: warning: Could not parse" || true; }

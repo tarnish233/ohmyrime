@@ -8,6 +8,7 @@
 //
 
 import AppKit
+import ScreenCaptureKit
 
 @MainActor
 struct Snapshot {
@@ -33,6 +34,9 @@ struct Snapshot {
     window.orderOut(nil)
     window.orderFrontRegardless()
     window.makeKey()
+    if ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_SNAPSHOT_README"] == "1" {
+      await readmeShots(window)
+    }
     var failures = 0
     // Only some pages: SQUIRREL_SETTINGS_SNAPSHOT_PAGES=input,ice
     let only = ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_SNAPSHOT_PAGES"]?.split(separator: ",").map(String.init)
@@ -44,7 +48,7 @@ struct Snapshot {
         state.previewExpanded = false
         try? await Task.sleep(for: .seconds(1.2))
         let base = "\(name)-\(Page.allCases.firstIndex(of: page)! + 1)-\(page.rawValue)"
-        failures += capture(window, base) ? 0 : 1
+        failures += await capture(window, base) ? 0 : 1
         // The rest of a long page, a screen at a time.
         if let scroll = mainScrollView(in: window), let document = scroll.documentView {
           var part = 2
@@ -54,7 +58,7 @@ struct Snapshot {
             scroll.contentView.scroll(to: NSPoint(x: 0, y: y))
             scroll.reflectScrolledClipView(scroll.contentView)
             try? await Task.sleep(for: .seconds(0.6))
-            failures += capture(window, "\(base)-\(part)") ? 0 : 1
+            failures += await capture(window, "\(base)-\(part)") ? 0 : 1
             part += 1
           }
           scroll.contentView.scroll(to: .zero)
@@ -63,7 +67,7 @@ struct Snapshot {
         if page == .appearance {
           state.previewExpanded = true
           try? await Task.sleep(for: .seconds(1.2))
-          failures += capture(window, "\(name)-1-appearance-expanded") ? 0 : 1
+          failures += await capture(window, "\(name)-1-appearance-expanded") ? 0 : 1
           state.previewExpanded = false
         }
       }
@@ -85,9 +89,38 @@ struct Snapshot {
         scroll.reflectScrolledClipView(scroll.contentView)
         try? await Task.sleep(for: .seconds(0.6))
       }
-      failures += capture(window, "light-3-ice-\(label)") ? 0 : 1
+      failures += await capture(window, "light-3-ice-\(label)") ? 0 : 1
     }
     store.iceInstaller.show(.idle)
+    NSApp.appearance = nil
+    print(failures == 0 ? "snapshots done" : "\(failures) snapshot(s) skipped")
+    exit(failures == 0 ? 0 : 1)
+  }
+
+  /// SQUIRREL_SETTINGS_SNAPSHOT_README=1 (scripts/readme-shots.sh): the README's pictures, settings-
+  /// <page>.png in light mode and the expanded preview in dark mode, the windows composited. The
+  /// window should be active (the script brings it to the front), or the controls show grey.
+  private func readmeShots(_ window: NSWindow) async -> Never {
+    for _ in 0..<80 where !NSApp.isActive {
+      try? await Task.sleep(for: .milliseconds(100))
+    }
+    window.makeKeyAndOrderFront(nil)
+    if !window.isKeyWindow {
+      print("✗ 窗口没有激活：控件会显示成灰色")
+    }
+    var failures = 0
+    NSApp.appearance = NSAppearance(named: .aqua)
+    for page in Page.allCases {
+      state.page = page
+      state.previewExpanded = false
+      try? await Task.sleep(for: .seconds(1.2))
+      failures += await capture(window, "settings-\(page.rawValue)", windowsOnly: true) ? 0 : 1
+    }
+    NSApp.appearance = NSAppearance(named: .darkAqua)
+    state.page = .appearance
+    state.previewExpanded = true
+    try? await Task.sleep(for: .seconds(1.5))
+    failures += await capture(window, "settings-appearance-dark", windowsOnly: true) ? 0 : 1
     NSApp.appearance = nil
     print(failures == 0 ? "snapshots done" : "\(failures) snapshot(s) skipped")
     exit(failures == 0 ? 0 : 1)
@@ -97,10 +130,18 @@ struct Snapshot {
   /// another space): screencapture -l takes only that window's pixels. The preview panel is a
   /// window of its own, captured the same way and drawn at its place, without what is behind it.
   /// Otherwise the screen region, so that the glass shows what is behind it.
-  private func capture(_ window: NSWindow, _ name: String) -> Bool {
+  /// SQUIRREL_SETTINGS_SNAPSHOT_WINDOWS=1 (for the README): this app's windows alone, composited by
+  /// the window server (ScreenCaptureKit), so that the glass shows the window behind it, on a
+  /// transparent background; screencapture -l if that is not allowed.
+  private func capture(_ window: NSWindow, _ name: String, windowsOnly forced: Bool = false) async -> Bool {
     let url = folder.appending(component: "\(name).png")
     let region = window.frame.insetBy(dx: 10, dy: 10).integral
-    if let other = windowInFront(of: region, main: window) {
+    let windowsOnly = forced || ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_SNAPSHOT_WINDOWS"] == "1"
+    if windowsOnly, await composite(window, to: url) {
+      print("→ \(name).png (windows composited)")
+      return true
+    }
+    if let other = windowsOnly ? "SQUIRREL_SETTINGS_SNAPSHOT_WINDOWS" : windowInFront(of: region, main: window) {
       print("  (\(name): \(other) in front, capturing the windows by themselves)")
       // screencapture cannot make an image of a window with child windows.
       let children = (window.childWindows ?? []).filter(\.isVisible)
@@ -110,16 +151,21 @@ struct Snapshot {
       for child in children {
         let childURL = folder.appending(component: "\(name)-panel.png")
         guard screencapture(["-o", "-l\(child.windowNumber)"], to: childURL),
-              let base = NSImage(contentsOf: url), let overlay = NSImage(contentsOf: childURL) else { continue }
-        let scale = window.backingScaleFactor
-        let size = NSSize(width: window.frame.width * scale, height: window.frame.height * scale)
-        let image = NSImage(size: size)
-        image.lockFocus()
-        base.draw(in: NSRect(origin: .zero, size: size))
+              let base = NSBitmapImageRep(data: (try? Data(contentsOf: url)) ?? Data()),
+              let overlay = NSBitmapImageRep(data: (try? Data(contentsOf: childURL)) ?? Data()) else { continue }
+        // Into a bitmap of the window capture's own size: NSImage.lockFocus would double it on a
+        // Retina screen.
+        let scale = Double(base.pixelsWide) / window.frame.width
+        guard let image = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: base.pixelsWide, pixelsHigh: base.pixelsHigh, bitsPerSample: 8,
+                                           samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: image) else { continue }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        base.draw(in: NSRect(x: 0, y: 0, width: base.pixelsWide, height: base.pixelsHigh))
         let origin = NSPoint(x: (child.frame.minX - window.frame.minX) * scale, y: (child.frame.minY - window.frame.minY) * scale)
         overlay.draw(in: NSRect(origin: origin, size: NSSize(width: child.frame.width * scale, height: child.frame.height * scale)))
-        image.unlockFocus()
-        if let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+        NSGraphicsContext.restoreGraphicsState()
+        if let png = image.representation(using: .png, properties: [:]) {
           try? png.write(to: url)
         }
         try? FileManager.default.removeItem(at: childURL)
@@ -131,6 +177,31 @@ struct Snapshot {
     guard screencapture(["-R\(Int(region.minX)),\(Int(screenHeight - region.maxY)),\(Int(region.width)),\(Int(region.height))"], to: url) else { return false }
     print("→ \(name).png")
     return true
+  }
+
+  /// The window and its child windows (the preview panel) as the window server draws them, without
+  /// anything else: no desktop, no other app's windows.
+  private func composite(_ window: NSWindow, to url: URL) async -> Bool {
+    guard let screen = window.screen,
+          let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true) else { return false }
+    let ours = Set(([window] + (window.childWindows ?? []).filter(\.isVisible)).map { CGWindowID($0.windowNumber) })
+    let windows = content.windows.filter { ours.contains($0.windowID) }
+    let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
+    guard windows.count == ours.count, let display = content.displays.first(where: { $0.displayID == displayID }) else { return false }
+    let filter = SCContentFilter(display: display, including: windows)
+    let configuration = SCStreamConfiguration()
+    // In the display's points, from its top left.
+    configuration.sourceRect = CGRect(x: window.frame.minX - screen.frame.minX, y: screen.frame.maxY - window.frame.maxY,
+                                      width: window.frame.width, height: window.frame.height)
+    configuration.width = Int(window.frame.width * screen.backingScaleFactor)
+    configuration.height = Int(window.frame.height * screen.backingScaleFactor)
+    configuration.showsCursor = false
+    configuration.ignoreShadowsDisplay = true
+    configuration.backgroundColor = CGColor.clear
+    configuration.captureResolution = .best
+    guard let image = try? await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration),
+          let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else { return false }
+    return (try? png.write(to: url)) != nil
   }
 
   private func screencapture(_ arguments: [String], to url: URL) -> Bool {
