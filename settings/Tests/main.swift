@@ -164,6 +164,101 @@ MainActor.assumeIsolated {
   }
 }
 
+// MARK: - Installing rime-ice
+
+print("== installer output")
+check(abs((RimeIceInstaller.progress(in: "################                                   42.3%") ?? -1) - 0.423) < 1e-9, "reads curl's bar")
+check(RimeIceInstaller.progress(in: "                                                                0.0%") == 0, "reads curl's empty bar")
+check(RimeIceInstaller.progress(in: "#=#=#                ") == nil && RimeIceInstaller.progress(in: "下载：x 5%") == nil, "not a bar")
+check(RimeIceInstaller.explain(status: 7, log: ["下载：x", "curl: (7) Failed to connect to github.com port 443"]).hasPrefix("连不上 GitHub"), "explains a connection failure")
+check(RimeIceInstaller.explain(status: 22, log: ["curl: (22) The requested URL returned error: 404"]).hasPrefix("下载失败"), "explains a server error")
+check(RimeIceInstaller.explain(status: 1, log: ["解压：x", "压缩包里没有 rime_ice.schema.yaml，内容不对"]) == "安装没有完成：压缩包里没有 rime_ice.schema.yaml，内容不对", "explains a script error")
+
+/// Set when an async test is done; the run loop turns meanwhile.
+final class Flag: @unchecked Sendable {
+  var value = false
+}
+
+let root = URL(fileURLWithPath: CommandLine.arguments[1], isDirectory: true)
+let iceZip = root.appending(components: ".cache", "rime-ice", "full.zip")
+if FileManager.default.fileExists(atPath: iceZip.path) {
+  let manager = FileManager.default
+  let work = sandbox.deletingLastPathComponent().appending(component: "ice")
+  let folder = work.appending(component: "Rime")
+  print("== installing rime-ice into \(folder.path)")
+  try? manager.removeItem(at: work)
+  try! manager.createDirectory(at: folder, withIntermediateDirectories: true)
+  try! manager.createDirectory(at: work.appending(component: "cache"), withIntermediateDirectories: true)
+  try! manager.copyItem(at: iceZip, to: work.appending(components: "cache", "full.zip"))
+  let defaultsURL = folder.appending(component: "default.custom.yaml")
+  let phrasesURL = folder.appending(component: "custom_phrase.txt")
+  let phrases = "# 我的短语\n测试安装\tcsaz\t1\n"
+  try! "patch:\n  schema_list:\n    - schema: rime_ice\n  menu/page_size: 6\n".write(to: defaultsURL, atomically: true, encoding: .utf8)
+  try! phrases.write(to: phrasesURL, atomically: true, encoding: .utf8)
+  RimePaths.userDir = folder
+  RimePaths.backupDir = work.appending(component: "backups")
+  RimeIceInstaller.script = root.appending(components: "scripts", "rime-ice.sh")
+  RimeIceInstaller.templates = root.appending(component: "rime")
+  RimeIceInstaller.cacheDir = work.appending(component: "cache")
+  MainActor.assumeIsolated {
+    let store = SettingsStore()
+    store.deploysAfterSaving = false
+    check(!store.iceInstalled && store.missingSchemas == ["rime_ice"] && store.typesOnlyEnglish, "rime_ice enabled but not there: English only")
+    try! "patch:\n  schema_list:\n    - schema: luna_pinyin\n  menu/page_size: 6\n".write(to: defaultsURL, atomically: true, encoding: .utf8)
+    store.reloadChangedFiles()
+    check(store.enabledSchemas == ["luna_pinyin"] && store.missingSchemas.isEmpty && !store.typesOnlyEnglish, "picks up a schema list edited elsewhere")
+    let sharedBase = store.defaults.baseURL
+
+    let done = Flag()
+    Task { @MainActor in
+      await store.installRimeIce(offline: true)
+      done.value = true
+    }
+    let start = Date()
+    while !done.value && Date().timeIntervalSince(start) < 120 {
+      RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+    }
+    check(store.iceInstaller.phase == .finished, "installs (\(String(format: "%.1f", Date().timeIntervalSince(start))) s)",
+          "\(store.iceInstaller.phase) " + store.iceInstaller.log.suffix(4).joined(separator: " | "))
+    check(store.iceInstalled && store.iceVersion != nil && store.mainIceSchema == "rime_ice", "rime-ice is there, version \(store.iceVersion ?? "?")")
+    check(store.iceInstaller.summary?.hasPrefix("已安装雾凇拼音") == true, "says so: \(store.iceInstaller.summary ?? "")")
+    check(store.enabledSchemas == ["rime_ice", "luna_pinyin"], "rime_ice becomes the default, luna_pinyin stays", "\(store.enabledSchemas)")
+    check(store.defaults.baseURL?.deletingLastPathComponent().path == folder.path && store.defaults.baseURL != sharedBase,
+          "default.custom.yaml now patches rime-ice's default.yaml", store.defaults.baseURL?.path ?? "nil")
+    check(store.int(store.defaults, "menu/page_size") == 6, "the user's page size stays")
+    check((try? String(contentsOf: phrasesURL, encoding: .utf8)) == phrases, "the user's custom_phrase.txt stays")
+    for name in ["squirrel.yaml", "weasel.yaml", "LICENSE"] {
+      check(!manager.fileExists(atPath: folder.appending(component: name).path), "rime-ice's \(name) is not installed")
+    }
+    check(manager.fileExists(atPath: folder.appending(component: "squirrel.custom.yaml").path), "the ohmyrime template fills in squirrel.custom.yaml")
+    let backups = (try? manager.subpathsOfDirectory(atPath: RimePaths.backupDir.path)) ?? []
+    check(backups.contains { $0.hasSuffix(".tar.gz") }, "backs the folder up first", backups.joined(separator: ", "))
+    check(!manager.fileExists(atPath: work.appending(components: "cache", "full").path)
+          && manager.fileExists(atPath: work.appending(components: "cache", "full.zip").path), "keeps the download, not what was unpacked")
+    check(!store.hasUnsavedChanges && RimeYAML.isValid((try? String(contentsOf: defaultsURL, encoding: .utf8)) ?? ""), "saved, valid YAML")
+
+    // Old backups of the whole folder go, the newest three stay; file backups are not touched.
+    let backupRoot = RimePaths.backupDir
+    for (index, folder) in ["20260101-000001", "20260101-000002", "20260101-000003", "20260101-000004"].enumerated() {
+      try? manager.createDirectory(at: backupRoot.appending(component: folder), withIntermediateDirectories: true)
+      try? Data().write(to: backupRoot.appending(components: folder, "Rime-\(index).tar.gz"))
+    }
+    try? Data().write(to: backupRoot.appending(components: "20260101-000001", "squirrel.custom.yaml"))
+    ConfigFile.pruneFolderBackups(keeping: 3)
+    let left = ((try? manager.contentsOfDirectory(atPath: backupRoot.path)) ?? []).sorted()
+    let archives = left.flatMap { folder in
+      ((try? manager.contentsOfDirectory(atPath: backupRoot.appending(component: folder).path)) ?? []).filter { $0.hasSuffix(".tar.gz") }
+    }
+    check(archives.count == 3 && !archives.contains("Rime-0.tar.gz") && !archives.contains("Rime-1.tar.gz"),
+          "keeps the newest three folder backups", archives.joined(separator: ", "))
+    check(manager.fileExists(atPath: backupRoot.appending(components: "20260101-000001", "squirrel.custom.yaml").path)
+          && !manager.fileExists(atPath: backupRoot.appending(component: "20260101-000002").path),
+          "a folder with other backups stays, an empty one goes", left.joined(separator: ", "))
+  }
+} else {
+  print("== installing rime-ice: skipped (no .cache/rime-ice/full.zip yet: run scripts/rime-ice.sh once)")
+}
+
 print("")
 print(failures == 0 ? "ALL CHECKS PASSED" : "\(failures) CHECK(S) FAILED")
 exit(failures == 0 ? 0 : 1)

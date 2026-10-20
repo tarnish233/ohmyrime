@@ -32,6 +32,10 @@ ditto "$sq/Frameworks/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.frame
 icon="$sq/build/Build/Products/Release/Squirrel.app/Contents/Resources/Rime.icns"
 [ -f "$icon" ] || icon="/Library/Input Methods/Squirrel.app/Contents/Resources/Rime.icns"
 [ -f "$icon" ] && cp "$icon" "$app/Contents/Resources/AppIcon.icns"
+# 「安装雾凇拼音」运行的脚本，和它补上的 ohmyrime 配置模板
+cp scripts/rime-ice.sh "$app/Contents/Resources/"
+mkdir -p "$app/Contents/Resources/rime"
+cp rime/*.yaml "$app/Contents/Resources/rime/"
 
 codesign --force --deep --sign - "$app" >/dev/null 2>&1
 echo "已构建：$app"

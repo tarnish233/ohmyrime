@@ -52,7 +52,8 @@ final class Deployer {
     return next > Date() ? next : nil
   }
 
-  func deploy(saved files: [URL] = []) {
+  /// Asks Squirrel to deploy; no answer within `seconds` shows as noAnswer.
+  func deploy(saved files: [URL] = [], timeout seconds: Double = 45) {
     state = .deploying
     errors = []
     startedAt = Date()
@@ -73,7 +74,7 @@ final class Deployer {
       }
     }
     timeout = Task { [weak self] in
-      try? await Task.sleep(for: .seconds(45))
+      try? await Task.sleep(for: .seconds(seconds))
       guard !Task.isCancelled, let self, self.state == .deploying else { return }
       self.state = .noAnswer
       self.errors = Self.errorLines(since: self.startedAt)

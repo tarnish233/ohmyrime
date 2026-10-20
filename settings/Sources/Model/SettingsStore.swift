@@ -17,6 +17,7 @@ final class SettingsStore {
   let phrases: PhraseBook
   let installation: InstallationFile
   let deployer = Deployer()
+  let iceInstaller = RimeIceInstaller()
   private(set) var schemas: [SchemaInfo] = []
   /// Bumped on every change, so that views reading settings refresh.
   private(set) var revision = 0
@@ -25,6 +26,7 @@ final class SettingsStore {
   var deploysAfterSaving = true
   @ObservationIgnored private var schemaFiles: [String: ConfigFile] = [:]
   @ObservationIgnored private var saveTask: Task<Void, Never>?
+  @ObservationIgnored private var installingIce = false
   @ObservationIgnored private let backupStamp: String
 
   init() {
@@ -32,10 +34,16 @@ final class SettingsStore {
     defaults = ConfigFile(id: "default")
     phrases = PhraseBook(url: RimePaths.userDir.appending(component: "custom_phrase.txt"))
     installation = InstallationFile()
+    backupStamp = Self.stamp()
+    schemas = SchemaInfo.discover()
+  }
+
+  /// A backup folder's name: "20261019-232404".
+  static func stamp(_ date: Date = Date()) -> String {
     let formatter = DateFormatter()
     formatter.dateFormat = "yyyyMMdd-HHmmss"
-    backupStamp = formatter.string(from: Date())
-    schemas = SchemaInfo.discover()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    return formatter.string(from: date)
   }
 
   func schema(_ id: String) -> ConfigFile {
@@ -124,7 +132,8 @@ final class SettingsStore {
   func saveNow(immediately: Bool = false) {
     saveTask?.cancel()
     saveTask = nil
-    if !immediately && deploysAfterSaving && (deployer.state == .deploying || deployer.nextSafeSave != nil) {
+    // Not while rime-ice is copied in either: Squirrel would deploy a half-copied folder.
+    if !immediately && deploysAfterSaving && (deployer.state == .deploying || deployer.nextSafeSave != nil || iceInstaller.isRunning) {
       let wait = max(0.25, deployer.nextSafeSave?.timeIntervalSinceNow ?? 0)
       saveTask = Task { [weak self] in
         try? await Task.sleep(for: .seconds(wait))
@@ -133,6 +142,14 @@ final class SettingsStore {
       }
       return
     }
+    let saved = writeChanges()
+    if !saved.isEmpty && deploysAfterSaving {
+      deployer.deploy(saved: saved)
+    }
+  }
+
+  /// Writes the files that changed; returns them.
+  private func writeChanges() -> [URL] {
     var saved = [URL]()
     do {
       for file in allFiles where try file.save(backupStamp: backupStamp) {
@@ -148,8 +165,30 @@ final class SettingsStore {
     } catch {
       saveError = error.localizedDescription
     }
-    if !saved.isEmpty && deploysAfterSaving {
-      deployer.deploy(saved: saved)
+    return saved
+  }
+
+  /// Until a running deploy ends (at most a minute), and the second after the last one.
+  private func waitUntilSavingIsSafe() async {
+    guard deploysAfterSaving else { return }
+    let start = Date()
+    while deployer.state == .deploying && Date().timeIntervalSince(start) < 60 {
+      try? await Task.sleep(for: .milliseconds(200))
+    }
+    if let wait = deployer.nextSafeSave?.timeIntervalSinceNow, wait > 0 {
+      try? await Task.sleep(for: .seconds(wait))
+    }
+  }
+
+  /// Saves what changed and deploys now, waiting for a running deploy and for the second after the
+  /// last one first (see Deployer.nextSafeSave); Squirrel gets `timeout` seconds.
+  func deployNow(timeout: Double = 45) async {
+    saveTask?.cancel()
+    saveTask = nil
+    await waitUntilSavingIsSafe()
+    let saved = writeChanges()
+    if deploysAfterSaving {
+      deployer.deploy(saved: saved, timeout: timeout)
     }
   }
 
@@ -186,6 +225,74 @@ final class SettingsStore {
       revision += 1
     }
   }
+
+  // MARK: rime-ice
+
+  /// Whether rime-ice is in the user folder.
+  var iceInstalled: Bool {
+    schemas.contains { $0.id == "rime_ice" && !$0.bundled }
+  }
+
+  /// rime-ice's version (its schema's), when it is installed.
+  var iceVersion: String? {
+    schemas.first { $0.id == "rime_ice" && !$0.bundled }?.version
+  }
+
+  /// Enabled schemas without a schema file: Rime cannot load them.
+  var missingSchemas: [String] {
+    let known = Set(schemas.map(\.id))
+    return enabledSchemas.filter { !known.contains($0) }
+  }
+
+  /// No enabled schema can be loaded, so Squirrel passes the keys through: English only.
+  var typesOnlyEnglish: Bool {
+    let enabled = enabledSchemas
+    return !enabled.isEmpty && missingSchemas.count == enabled.count
+  }
+
+  /// Schemas that come with rime-ice.
+  nonisolated static func isIceSchema(_ id: String) -> Bool {
+    ["rime_ice", "t9", "melt_eng", "radical_pinyin"].contains(id) || id.hasPrefix("double_pinyin")
+  }
+
+  /// Installs rime-ice, or updates it, with the bundled scripts/rime-ice.sh; then makes it the
+  /// default schema if it was not enabled, and deploys (the first deploy builds its dictionaries).
+  func installRimeIce(offline: Bool = false) async {
+    guard !installingIce else { return }
+    installingIce = true
+    defer { installingIce = false }
+    let wasInstalled = iceInstalled
+    let before = iceVersion
+    iceInstaller.willRun()
+    // Edits still waiting for the save delay go in first, so that the backup and the deploy take
+    // them; not in the second of the last deploy, or Rime would take the file for unchanged.
+    saveTask?.cancel()
+    saveTask = nil
+    await waitUntilSavingIsSafe()
+    let written = writeChanges()
+    let installed = await iceInstaller.run(offline: offline, backupDir: RimePaths.backupDir.appending(component: Self.stamp()))
+    ConfigFile.pruneFolderBackups(keeping: 3)
+    ConfigFile.pruneBackups(keeping: 20)
+    reloadChangedFiles()
+    guard installed, iceInstalled else {
+      if !written.isEmpty && deploysAfterSaving {
+        deployer.deploy(saved: written)
+      }
+      return
+    }
+    if !enabledSchemas.contains("rime_ice") {
+      setEnabledSchemas(["rime_ice"] + enabledSchemas)
+    }
+    let version = iceVersion.map { "（\($0)）" } ?? ""
+    if !wasInstalled {
+      iceInstaller.summary = "已安装雾凇拼音\(version)"
+    } else if let before, let after = iceVersion, before != after {
+      iceInstaller.summary = "已更新雾凇拼音：\(before) → \(after)"
+    } else {
+      iceInstaller.summary = "已更新到最新发布版\(version)"
+    }
+    await deployNow(timeout: 120)
+  }
 }
 
 // MARK: - Schemas
@@ -196,6 +303,9 @@ struct SchemaInfo: Identifiable, Hashable {
   let dependencies: [String]
   /// Shipped with Squirrel rather than in the user folder.
   let bundled: Bool
+  var version: String?
+  /// Enabled, but there is no schema file for it.
+  var missing = false
 
   /// The schemas in the user folder and in Squirrel; the user's copy wins.
   static func discover() -> [SchemaInfo] {
@@ -207,7 +317,8 @@ struct SchemaInfo: Identifiable, Hashable {
               let schema = schemaSection(text) else { continue }
         let id = schema["schema_id"]?.scalar ?? String(file.dropLast(".schema.yaml".count))
         found[id] = SchemaInfo(id: id, name: schema["name"]?.scalar ?? id,
-                               dependencies: schema["dependencies"]?.listValue?.compactMap(\.scalar) ?? [], bundled: bundled)
+                               dependencies: schema["dependencies"]?.listValue?.compactMap(\.scalar) ?? [], bundled: bundled,
+                               version: schema["version"]?.scalar)
       }
     }
     return found.values.sorted { ($0.bundled ? 1 : 0, $0.id) < ($1.bundled ? 1 : 0, $1.id) }

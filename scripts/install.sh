@@ -3,8 +3,13 @@
 # 注册并尝试启用输入源，但不切换当前输入法。只改动 /Library/Input Methods/Squirrel.app，
 # 不碰同目录下的其他输入法（如微信输入法）。
 #
+# 还没装雾凇拼音时顺便下载安装（scripts/rime-ice.sh），一条命令装好全部；
+# 加 --no-rime-ice 跳过（比如没有网络时）。「鼠须管设置」装到 /Applications。
+#
 # 为什么不用 ~/Library/Input Methods：在 macOS 27 上，用户目录里的输入法虽然能被注册，
 # 但启用请求会被静默忽略，系统设置里也列不出来。
+#
+#   scripts/install.sh [--no-rime-ice]
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 app="$root/squirrel/build/Build/Products/Release/Squirrel.app"
@@ -13,6 +18,14 @@ dest="/Library/Input Methods/Squirrel.app"
 user_copy="$HOME/Library/Input Methods/Squirrel.app"
 rime_dir="$HOME/Library/Rime"
 lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+
+install_ice=true
+for arg in "$@"; do
+  case "$arg" in
+    --no-rime-ice) install_ice=false ;;
+    *) echo "用法：scripts/install.sh [--no-rime-ice]" >&2; exit 2 ;;
+  esac
+done
 
 [ -d "$app" ] || { echo "未找到构建产物，请先运行 scripts/build.sh" >&2; exit 1; }
 
@@ -51,19 +64,34 @@ APPLESCRIPT
 "$lsregister" -f "$dest"
 echo "已安装：$dest"
 
-# 4. 用户配置：只补充缺失的文件，不覆盖已有修改
+# 4. 输入方案：还没装雾凇拼音就下载安装（约 16 MB）。装不上不中断安装，之后可以再装
+ice_installed() { [ -f "$rime_dir/rime_ice.schema.yaml" ]; }
+if ice_installed; then
+  echo "雾凇拼音已安装，跳过（更新用 scripts/rime-ice.sh，或「鼠须管设置 → 雾凇拼音」）"
+elif $install_ice; then
+  echo "还没装雾凇拼音，现在下载安装…"
+  bash "$root/scripts/rime-ice.sh" || echo "雾凇拼音没装上（网络不通？），可以之后再装。" >&2
+else
+  echo "按 --no-rime-ice 跳过雾凇拼音。"
+fi
+
+# 5. 用户配置：只补充缺失的文件，不覆盖已有修改。default.custom.yaml 只启用雾凇拼音，
+#    雾凇拼音还没装时不写它，否则鼠须管找不到方案，只能打英文（装雾凇拼音时会补上）
 mkdir -p "$rime_dir"
 for file in "$root"/rime/*.yaml; do
-  target="$rime_dir/$(basename "$file")"
+  name=$(basename "$file")
+  target="$rime_dir/$name"
   if [ -e "$target" ]; then
     echo "保留已有配置：$target"
+  elif [ "$name" = default.custom.yaml ] && ! ice_installed; then
+    echo "暂不写入：${target}（它只启用雾凇拼音）"
   else
     cp "$file" "$target"
     echo "写入配置：$target"
   fi
 done
 
-# 5. 注册并启用输入源（不切换）
+# 6. 注册并启用输入源（不切换）
 # 新构建的程序第一次运行时，终端安全软件（如阿里郎）可能先扫描并结束进程（Killed: 9），
 # 扫描通过后即可正常运行，所以先预热并重试几次。
 squirrel() {
@@ -90,7 +118,7 @@ for check in 1 2 3 4; do
 done
 squirrel --enable-input-source
 
-# 6. 「鼠须管设置」装进「应用程序」：管理员用户可直接写 /Applications，不用密码；
+# 7. 「鼠须管设置」装进「应用程序」：管理员用户可直接写 /Applications，不用密码；
 #    写不了时装到 ~/Applications。鼠须管菜单里的「设置…」按 bundle ID 找到它。
 if [ -d "$settings_app" ]; then
   apps_dir=/Applications
@@ -103,7 +131,7 @@ if [ -d "$settings_app" ]; then
   echo "已安装：$settings_dest"
 fi
 
-# 7. 在后台启动一次：新装的输入法在本次登录内可能拉不起来（imklaunchagent 报
+# 8. 在后台启动一次：新装的输入法在本次登录内可能拉不起来（imklaunchagent 报
 #    LaunchInputMethod() Error -50，表现为只能打英文）。启动后它会自己登记连接端点，
 #    并完成首次部署；下次登录后由系统自动启动。
 open -g "$dest"
@@ -116,6 +144,9 @@ else
   echo "  先 ⌘Q 退出「系统设置」再打开 → 键盘 → 文字输入「输入法」→ 编辑… → 左下角 + → 简体中文 → 鼠须管 → 添加"
   echo "如果菜单里有鼠须管却选不中，等半分钟后重新注册："
   echo "  '$dest/Contents/MacOS/Squirrel' --register-input-source"
+fi
+if ! ice_installed; then
+  echo "还没有雾凇拼音：联网后运行 scripts/rime-ice.sh，或在「鼠须管设置 → 雾凇拼音」里点「安装雾凇拼音」。"
 fi
 echo "设置：鼠须管菜单 →「设置…」，或在「应用程序」里打开「鼠须管设置」，改完自动生效。"
 echo "手动修改 ~/Library/Rime 下的配置后，用「鼠须管 → 重新部署」生效。"

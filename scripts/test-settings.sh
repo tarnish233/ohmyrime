@@ -43,4 +43,16 @@ expect "^nihao, +=> 1\." "逗号翻页：第一页时 , 不上屏标点"
 expect "^nihao\. +=> page 2:" "句号翻页：. 到第 2 页"
 expect "^cshi +=> 1\.测试短语" "自定义短语"
 expect "librime 错误日志：0 条" "部署没有错误"
+
+# 模型测试里离线装好雾凇拼音的文件夹（没有 .cache/rime-ice/full.zip 时跳过）
+if [ -f "$work/ice/Rime/rime_ice.schema.yaml" ]; then
+  echo "== 用 librime 部署刚装好雾凇拼音的文件夹"
+  out=$(bash scripts/rime-smoke.sh "$work/ice/Rime" nihao csaz 2>&1)
+  echo "$out" | grep -E "=>|错误|schema:"
+  expect "^schema: rime_ice" "默认方案是雾凇拼音"
+  expect "^nihao +=> 1\.你好.* 6\." "每页 6 个：保留了用户自己的设置"
+  if echo "$out" | grep -q -E "^nihao +=> .* 7\."; then echo "  ✗ 每页不多于 6 个"; fail=1; fi
+  expect "^csaz +=> 1\.测试安装" "保留了用户的自定义短语"
+  expect "librime 错误日志：0 条" "部署没有错误"
+fi
 exit $fail

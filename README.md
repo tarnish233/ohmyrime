@@ -7,7 +7,7 @@
 | `squirrel/` | [鼠须管](https://github.com/rime/squirrel) fork（独立 git 仓库，分支 `ohmyrime`），加入卷轴模式和液态玻璃外观 |
 | `settings/` | 「鼠须管设置」：图形界面的设置 App（SwiftUI），改完自动生效 |
 | `rime/` | Rime 用户配置模板，安装时复制到 `~/Library/Rime`（不覆盖已有文件） |
-| `scripts/` | `build.sh` 构建（含设置 App）、`install.sh` 安装、`uninstall.sh` 卸载、`rime-ice.sh` 安装或更新雾凇拼音、`rime-smoke.sh` 冒烟测试、`test-settings.sh` 设置 App 的测试 |
+| `scripts/` | `build.sh` 构建（含设置 App）、`install.sh` 安装（没装雾凇拼音时一并安装）、`uninstall.sh` 卸载、`rime-ice.sh` 安装或更新雾凇拼音、`rime-smoke.sh` 冒烟测试、`test-settings.sh` 设置 App 的测试 |
 | `tools/` | `rime-smoke.c`：用本地 librime 部署配置并打印按键结果；`tis-props.swift`：查看系统输入法框架里的输入源状态（只读） |
 
 ## 设置 App：鼠须管设置
@@ -17,8 +17,8 @@
 | 页面 | 能设置的 | 写到 |
 |---|---|---|
 | 外观 | 液态玻璃 / 系统配色 / 预设配色，玻璃质感，一行或一列、横排或竖排，卷轴模式（行数、Tab 翻页、列宽），字体和字号、选中项字重，候选格式，圆角、留白、间距、行距，动效，菜单栏图标，部署通知；顶部是实时预览 | `squirrel.custom.yaml` |
-| 输入 | 启用哪些方案和顺序，每页候选数，左右 Shift / Control / Caps Lock 怎样切换中英，翻页键（- = / , . / [ ] / Tab），以词定字，方案选单快捷键 | `default.custom.yaml` |
-| 雾凇拼音 | 新输入框的默认状态（中英、标点、简繁、Emoji、全角、单字优先），模糊音（z/zh、n/l、an/ang 等 10 组） | `rime_ice.custom.yaml`，启用的双拼方案也一起改 |
+| 输入 | 启用哪些方案和顺序（找不到方案文件的标「未安装」），每页候选数，左右 Shift / Control / Caps Lock 怎样切换中英，翻页键（- = / , . / [ ] / Tab），以词定字，方案选单快捷键 | `default.custom.yaml` |
+| 雾凇拼音 | 安装或更新雾凇拼音；新输入框的默认状态（中英、标点、简繁、Emoji、全角、单字优先），模糊音（z/zh、n/l、an/ang 等 10 组） | `rime_ice.custom.yaml`，启用的双拼方案也一起改 |
 | 应用 | 按应用：默认英文、不内嵌编码、Vim 模式；可添加、移除应用 | `squirrel.custom.yaml` 的 `app_options` |
 | 短语 | 自定义短语表格：短语、编码、权重，可搜索 | `custom_phrase.txt` |
 | 词库与部署 | 用户词库大小，同步文件夹（可设到 iCloud 云盘）、立即同步、备份用户文件夹，部署状态和错误日志 | `installation.yaml` 的 `sync_dir` |
@@ -28,9 +28,13 @@
   - 写之前用 librime 自己的 YAML 解析器检查一遍，读不了就不写。
   - 每次打开 App 后第一次改动之前，原文件备份到 `~/Library/Application Support/鼠须管设置/Backups/<时间>/`，保留最近 20 次。
 - 用文本编辑器改过配置，切回 App 时会自动重新读取。
+- 没装雾凇拼音时：「雾凇拼音」页有「安装雾凇拼音」按钮；启用的方案都找不到（只能打英文）时，每页顶部有提示，「输入」页把这些方案标成「未安装」。
+  - 按钮运行打包在 App 里的 `scripts/rime-ice.sh`，和命令行装的完全一样：先备份用户文件夹，再装雾凇拼音（不装它的 `squirrel.yaml`），保留你的 `*.custom.yaml`、用户词库和自定义短语。
+  - 装好后设为默认方案并部署，第一次要编译词库，十几秒。下载显示进度，可以取消；装好后同一个位置变成「更新到最新版」。
+  - 先用系统代理，或本机 7890 端口的代理，连不上就直接连接。下载缓存在 `~/Library/Caches/im.rime.ohmyrime.settings`，备份放在 `~/Library/Application Support/鼠须管设置/Backups`。
 - 部署：App 通知鼠须管「安静地」重新部署（不弹通知），鼠须管部署完回报结果。librime 按秒比较文件时间，同一秒内的第二次保存会被当成没改，所以 App 会等过了上次部署的那一秒再保存，必要时再请求一次。
 
-测试：`scripts/test-settings.sh` 在 `~/Library/Rime` 的副本上跑模型测试（YAML 往返、逐行编辑、各页设置），再用 librime 部署这份副本，打字确认改动生效（每页 7 个、模糊音、翻页键、自定义短语），不碰真正的配置。截图检查：`SQUIRREL_SETTINGS_USER_DIR=<副本> SQUIRREL_SETTINGS_NO_DEPLOY=1 SQUIRREL_SETTINGS_SNAPSHOT=<输出目录> "/Applications/鼠须管设置.app/Contents/MacOS/SquirrelSettings"`，只截这个 App 自己的窗口。
+测试：`scripts/test-settings.sh` 在 `~/Library/Rime` 的副本上跑模型测试（YAML 往返、逐行编辑、各页设置），再用 librime 部署这份副本，打字确认改动生效（每页 7 个、模糊音、翻页键、自定义短语），不碰真正的配置。它还用 `.cache/rime-ice/full.zip` 往一个空文件夹离线装一遍雾凇拼音，确认用户自己的设置和短语保留、部署没有错误。截图检查：`SQUIRREL_SETTINGS_USER_DIR=<副本> SQUIRREL_SETTINGS_NO_DEPLOY=1 SQUIRREL_SETTINGS_SNAPSHOT=<输出目录> "/Applications/鼠须管设置.app/Contents/MacOS/SquirrelSettings"`，只截这个 App 自己的窗口。
 
 ## 卷轴模式
 
@@ -104,8 +108,13 @@ patch:
 ```bash
 scripts/build.sh      # 首次会下载预编译 librime、Sparkle 和默认方案；本机 7890 端口有代理时自动使用；最后构建设置 App
 scripts/install.sh    # 鼠须管装到 /Library/Input Methods（官方位置，会弹一次管理员密码框），只动 Squirrel.app；
-                      # 「鼠须管设置」装到 /Applications（不用密码）
+                      # 还没装雾凇拼音就一并下载安装；「鼠须管设置」装到 /Applications（不用密码）
 ```
+
+新电脑上这两条就够了，之后在菜单栏选「鼠须管」就能打字。`install.sh` 的其他行为：
+- 雾凇拼音装过的就跳过；加 `--no-rime-ice` 不装。
+- 下载失败不会中断安装，可以之后再用 `scripts/rime-ice.sh` 或设置 App 补装。
+- 没装上雾凇拼音时，不写入只启用雾凇拼音的 `default.custom.yaml`，鼠须管先用自带的朙月拼音，不会变成只能打英文。
 
 首次安装后要手动添加一次（以后重装不用再加）：先 ⌘Q 退出「系统设置」再打开 → 键盘 → 文字输入「输入法」→ 编辑… → + → 简体中文 → 鼠须管。
 
@@ -127,6 +136,10 @@ macOS 27 上有两点限制：
 scripts/rime-ice.sh             # 下载最新版，备份 ~/Library/Rime 后安装，并通知鼠须管重新部署
 scripts/rime-ice.sh --offline   # 用 .cache 里上次下载的版本
 ```
+
+`install.sh` 在没装雾凇拼音时会自动运行这个脚本。不用命令行也行：「鼠须管设置 → 雾凇拼音」里的「安装雾凇拼音 / 更新到最新版」运行的是同一个脚本（打包在 App 里），装完自动部署。
+
+下载会先走代理：本机 7890 端口，或用 `OHMYRIME_PROXY` 指定。下载文件的服务器经代理不通时，改为直接连接。断线会自动重试。
 
 和官方的「清空用户目录再复制」不同，这个脚本：
 - 保留 `*.custom.yaml`、用户词库和同步目录；

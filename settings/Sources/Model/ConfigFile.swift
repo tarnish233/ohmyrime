@@ -52,6 +52,9 @@ final class ConfigFile {
   private(set) var problem: String?
   private var effectiveCache: YAMLNode?
   private var loadedDate: Date?
+  /// The base file as it was read: it may change, or become the user's copy (installing
+  /// rime-ice puts its own default.yaml in the user folder).
+  private var loadedBase: (url: URL?, date: Date?) = (nil, nil)
   /// Entries that were in the file when it was read: updated in place even when they come to say
   /// what the base says, so that lines the user wrote, and their comments, stay.
   private var writtenKeys = Set<String>()
@@ -68,6 +71,8 @@ final class ConfigFile {
   var fileName: String { customURL.lastPathComponent }
 
   func reload() {
+    let baseURL = self.baseURL
+    loadedBase = (baseURL, baseURL.flatMap(Self.modificationDate(of:)))
     base = baseURL.flatMap { try? String(contentsOf: $0, encoding: .utf8) }.flatMap(RimeYAML.parse) ?? .map([])
     // As this app would write it (a missing final newline is no change).
     document = PatchDocument(text: (try? String(contentsOf: customURL, encoding: .utf8)) ?? "")
@@ -83,11 +88,18 @@ final class ConfigFile {
   }
 
   private var modificationDate: Date? {
-    (try? FileManager.default.attributesOfItem(atPath: customURL.path))?[.modificationDate] as? Date
+    Self.modificationDate(of: customURL)
   }
 
-  /// Whether the custom file was changed by someone else since it was read.
-  var changedOnDisk: Bool { modificationDate != loadedDate }
+  private static func modificationDate(of url: URL) -> Date? {
+    (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+  }
+
+  /// Whether the custom file, or the base file, was changed by someone else since it was read.
+  var changedOnDisk: Bool {
+    let baseURL = self.baseURL
+    return modificationDate != loadedDate || baseURL != loadedBase.url || baseURL.flatMap(Self.modificationDate(of:)) != loadedBase.date
+  }
 
   /// The config as Rime will read it: the base with every patch entry applied, in Rime's order.
   var effective: YAMLNode {
@@ -183,7 +195,27 @@ final class ConfigFile {
     pruneBackups(keeping: 20)
   }
 
-  private static func pruneBackups(keeping count: Int) {
+  /// Backups of the whole user folder (Rime-*.tar.gz, before installing rime-ice) are big, about
+  /// 16 MB with rime-ice's dictionaries: only the last few stay.
+  static func pruneFolderBackups(keeping count: Int) {
+    let manager = FileManager.default
+    let root = RimePaths.backupDir
+    func archives(in folder: String) -> [String] {
+      ((try? manager.contentsOfDirectory(atPath: root.appending(component: folder).path)) ?? [])
+        .filter { $0.hasPrefix("Rime-") && $0.hasSuffix(".tar.gz") }
+    }
+    let folders = ((try? manager.contentsOfDirectory(atPath: root.path)) ?? []).sorted().filter { !archives(in: $0).isEmpty }
+    for folder in folders.dropLast(count) {
+      for archive in archives(in: folder) {
+        try? manager.removeItem(at: root.appending(components: folder, archive))
+      }
+      if ((try? manager.contentsOfDirectory(atPath: root.appending(component: folder).path)) ?? []).isEmpty {
+        try? manager.removeItem(at: root.appending(component: folder))
+      }
+    }
+  }
+
+  static func pruneBackups(keeping count: Int) {
     let manager = FileManager.default
     guard let folders = try? manager.contentsOfDirectory(atPath: RimePaths.backupDir.path) else { return }
     for old in folders.sorted().dropLast(count) {

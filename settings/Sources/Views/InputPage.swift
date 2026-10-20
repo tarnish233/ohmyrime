@@ -10,6 +10,7 @@ import SwiftUI
 
 struct InputPage: View {
   @Environment(SettingsStore.self) private var store
+  @Environment(AppState.self) private var state
   @State private var showsAllSchemas = false
 
   var body: some View {
@@ -51,7 +52,9 @@ struct InputPage: View {
   private var orderedSchemas: (enabled: [SchemaInfo], more: [SchemaInfo], others: [SchemaInfo]) {
     let enabledIDs = store.enabledSchemas
     let byID = Dictionary(store.schemas.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-    let enabled = enabledIDs.map { byID[$0] ?? SchemaInfo(id: $0, name: $0, dependencies: [], bundled: false) }
+    let enabled = enabledIDs.map {
+      byID[$0] ?? SchemaInfo(id: $0, name: $0 == "rime_ice" ? "雾凇拼音" : $0, dependencies: [], bundled: false, missing: true)
+    }
     let dependencies = store.dependencySchemas
     let rest = store.schemas.filter { !enabledIDs.contains($0.id) }
     return (enabled, rest.filter { !$0.bundled && !dependencies.contains($0.id) }, rest.filter { $0.bundled || dependencies.contains($0.id) })
@@ -71,17 +74,40 @@ struct InputPage: View {
     } header: {
       Text("输入方案")
     } footer: {
-      Note("排在第一个的是默认方案。打字时按 F4 切换方案。新启用的方案第一次部署要多等几秒。")
+      Note(schemaFooter)
     }
+  }
+
+  private var schemaFooter: String {
+    var text = ""
+    if !store.missingSchemas.isEmpty {
+      text = "标着「未安装」的方案找不到方案文件，鼠须管用不了"
+      text += store.typesOnlyEnglish ? "；现在启用的方案都用不了，只能打英文。" : "。"
+    }
+    return text + "排在第一个的是默认方案。打字时按 F4 切换方案。新启用的方案第一次部署要多等几秒。"
   }
 
   private func schemaRow(_ schema: SchemaInfo, enabled: Bool, index: Int, count: Int) -> some View {
     HStack(spacing: 8) {
       VStack(alignment: .leading, spacing: 1) {
-        Text(schema.name)
+        HStack(spacing: 6) {
+          Text(schema.name)
+          if schema.missing {
+            Text("未安装")
+              .font(.caption.weight(.medium))
+              .foregroundStyle(.orange)
+              .padding(.horizontal, 6)
+              .padding(.vertical, 1)
+              .background(Capsule().fill(.orange.opacity(0.15)))
+          }
+        }
         Text(schema.id).font(.caption).foregroundStyle(.secondary)
       }
       Spacer()
+      if schema.missing && SettingsStore.isIceSchema(schema.id) {
+        Button("安装雾凇拼音…") { state.page = .ice }
+          .buttonStyle(.link)
+      }
       if enabled && count > 1 {
         Button {
           move(schema.id, by: -1)

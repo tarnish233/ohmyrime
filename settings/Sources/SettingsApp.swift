@@ -7,10 +7,13 @@
 //
 //  Environment variables, for tests (not arguments: AppKit reads "-key value" pairs from the
 //  command line, and takes a path left over for a file to open, which skips the first window):
-//    SQUIRREL_SETTINGS_USER_DIR=<dir>   edit a copy of the user folder
+//    SQUIRREL_SETTINGS_USER_DIR=<dir>   edit a copy of the user folder (backups go next to it)
 //    SQUIRREL_SETTINGS_NO_DEPLOY=1      save without asking Squirrel to deploy
-//    SQUIRREL_SETTINGS_SNAPSHOT=<dir>   capture every page into <dir>, then quit (Snapshot.swift)
+//    SQUIRREL_SETTINGS_SNAPSHOT=<dir>   capture every page into <dir>, then quit (Snapshot.swift);
+//                                       SQUIRREL_SETTINGS_SNAPSHOT_PAGES=input,ice for some of them
 //    SQUIRREL_SETTINGS_SELFTEST=deploy  change a setting and back, through Squirrel's deploy
+//    SQUIRREL_SETTINGS_SELFTEST=install-ice | install-ice-offline | install-ice-cancel
+//                                       install rime-ice into the copy as the page does
 //
 
 import AppKit
@@ -54,6 +57,7 @@ struct SettingsApp: App {
     let options = LaunchOptions.current
     if let userDir = options.userDir {
       RimePaths.userDir = userDir
+      RimePaths.backupDir = userDir.deletingLastPathComponent().appending(component: "Backups")
     }
     // librime only parses YAML here; errors go to stderr, nothing to the user's log folder.
     var traits = RimeTraits.rimeStructInit()
@@ -80,8 +84,12 @@ struct SettingsApp: App {
         .task {
           if let folder = LaunchOptions.current.snapshotDir {
             await Snapshot(store: store, state: state, folder: folder).run()
-          } else if ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_SELFTEST"] == "deploy" {
-            await DeploySelfTest(store: store).run()
+          } else if let test = ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_SELFTEST"] {
+            if test == "deploy" {
+              await DeploySelfTest(store: store).run()
+            } else if let mode = IceInstallSelfTest.Mode(rawValue: test) {
+              await IceInstallSelfTest(store: store, mode: mode).run()
+            }
           }
         }
     }
@@ -109,8 +117,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
   func applicationWillTerminate(_ notification: Notification) {
     MainActor.assumeIsolated {
+      guard let store = Self.store else { return }
+      // A download stops (copying, a second or two, finishes by itself).
+      store.iceInstaller.cancel()
       // Changes still waiting for the save delay.
-      if let store = Self.store, store.hasUnsavedChanges {
+      if store.hasUnsavedChanges {
         store.saveNow(immediately: true)
       }
     }

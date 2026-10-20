@@ -76,6 +76,9 @@ struct ContentView: View {
         if !store.problems.isEmpty || store.saveError != nil {
           ProblemBanner(messages: store.problems + [store.saveError].compactMap { $0 })
         }
+        if store.typesOnlyEnglish && state.page != .ice {
+          EnglishOnlyBanner()
+        }
         page(state.page)
       }
       .navigationTitle(state.page.title)
@@ -113,6 +116,30 @@ struct ProblemBanner: View {
       Spacer()
     }
     .padding(10)
+    .background(.orange.opacity(0.12))
+  }
+}
+
+/// Every enabled schema is missing (rime-ice is not installed yet, say): Squirrel types only English.
+struct EnglishOnlyBanner: View {
+  @Environment(SettingsStore.self) private var store
+  @Environment(AppState.self) private var state
+
+  var body: some View {
+    let ice = store.missingSchemas.contains(where: SettingsStore.isIceSchema)
+    HStack(spacing: 8) {
+      Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+      Text(ice ? "雾凇拼音还没有安装，鼠须管现在只能打英文。" : "启用的输入方案都找不到方案文件，鼠须管现在只能打英文。")
+        .font(.callout)
+      Spacer()
+      if ice {
+        Button("安装雾凇拼音…") { state.page = .ice }
+      } else if state.page != .input {
+        Button("选择输入方案…") { state.page = .input }
+      }
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 8)
     .background(.orange.opacity(0.12))
   }
 }
