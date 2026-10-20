@@ -238,7 +238,9 @@ struct DeployDetails: View {
     switch store.deployer.state {
     case .failed: "Rime 没能读懂改过的配置，下面是日志里的错误。可以改回刚才的设置，或打开日志查看。"
     case .noAnswer: "改动已写进 ~/Library/Rime，但没收到鼠须管部署完成的消息：鼠须管可能没在运行，或者还是旧版本。在菜单栏输入法菜单里选一次鼠须管，或点「重新部署」。"
-    default: "改动写进 ~/Library/Rime 下的 *.custom.yaml，鼠须管随即重新部署（外观立刻生效，方案改动要几秒）。改之前的文件备份在 ~/Library/Application Support/鼠须管设置/Backups。"
+    case .succeeded where store.deployer.lastOutcome == "reloaded":
+      "只改了外观：鼠须管重新载入了外观，Rime 没有重启，各应用里正在输入的内容和中英状态都不受影响。改之前的文件备份在 ~/Library/Application Support/鼠须管设置/Backups。"
+    default: "改动写进 ~/Library/Rime 下的 *.custom.yaml。只改外观时，鼠须管只重新载入外观；其他改动重新部署 Rime，要零点几秒到几秒：「输入」页的改动会重建每个方案（约 3 秒），装新方案时要十几秒。改之前的文件备份在 ~/Library/Application Support/鼠须管设置/Backups。"
     }
   }
 }

@@ -2,8 +2,8 @@
 //  Deployer.swift
 //  鼠须管设置
 //
-//  Asks the running Squirrel to deploy (quietly: the settings app saves after every change) and
-//  hears how it went.
+//  Asks the running Squirrel to deploy (quietly: the settings app saves after every change), or
+//  only to reload its look, and hears how it went.
 //
 
 import AppKit
@@ -31,6 +31,12 @@ final class Deployer {
   /// Files saved for the running deploy, and whether it was asked for again.
   private var savedFiles = [URL]()
   private var retried = false
+  /// The running request only reloads Squirrel's look.
+  private var styleOnly = false
+  /// What Squirrel said last: success, failure, unchanged, or reloaded (the look only).
+  private(set) var lastOutcome: String?
+  /// How long the last request took Squirrel, from asking to its answer.
+  var lastDuration: TimeInterval? { lastFinish.map { $0.timeIntervalSince(startedAt) } }
   private var observer: NSObjectProtocol?
 
   init() {
@@ -52,13 +58,16 @@ final class Deployer {
     return next > Date() ? next : nil
   }
 
-  /// Asks Squirrel to deploy; no answer within `seconds` shows as noAnswer.
-  func deploy(saved files: [URL] = [], timeout seconds: Double = 45) {
+  /// Asks Squirrel to deploy; no answer within `seconds` shows as noAnswer. `styleOnly`: only the
+  /// look changed (squirrel.custom.yaml's style), so Squirrel rebuilds build/squirrel.yaml and
+  /// reloads the look without restarting Rime, keeping every input session.
+  func deploy(saved files: [URL] = [], styleOnly: Bool = false, timeout seconds: Double = 45) {
     state = .deploying
     errors = []
     startedAt = Date()
     savedFiles = files
     retried = false
+    self.styleOnly = styleOnly
     timeout?.cancel()
     if isSquirrelRunning {
       postReload()
@@ -82,7 +91,8 @@ final class Deployer {
   }
 
   private func postReload() {
-    DistributedNotificationCenter.default().postNotificationName(.init("SquirrelReloadNotification"), object: "quiet", userInfo: nil, deliverImmediately: true)
+    DistributedNotificationCenter.default().postNotificationName(.init("SquirrelReloadNotification"), object: styleOnly ? "style" : "quiet",
+                                                                 userInfo: nil, deliverImmediately: true)
   }
 
   func syncUserData() {
@@ -92,6 +102,7 @@ final class Deployer {
   private func finished(_ outcome: String?) {
     guard state == .deploying else { return }
     lastFinish = Date()
+    lastOutcome = outcome
     if outcome == "unchanged" && !savedFiles.isEmpty && !retried {
       // Saved in the second of the deploy before: date the files after it and ask again.
       retried = true

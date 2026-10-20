@@ -32,9 +32,13 @@
   - 按钮运行打包在 App 里的 `scripts/rime-ice.sh`，和命令行装的完全一样：先备份用户文件夹，再装雾凇拼音（不装它的 `squirrel.yaml`），保留你的 `*.custom.yaml`、用户词库和自定义短语。
   - 装好后设为默认方案并部署，第一次要编译词库，十几秒。下载显示进度，可以取消；装好后同一个位置变成「更新到最新版」。
   - 先用系统代理，或本机 7890 端口的代理，连不上就直接连接。下载缓存在 `~/Library/Caches/im.rime.ohmyrime.settings`，备份放在 `~/Library/Application Support/鼠须管设置/Backups`。
-- 部署：App 通知鼠须管「安静地」重新部署（不弹通知），鼠须管部署完回报结果。librime 按秒比较文件时间，同一秒内的第二次保存会被当成没改，所以 App 会等过了上次部署的那一秒再保存，必要时再请求一次。
+- 生效方式：
+  - 只改了外观（`style/…`、菜单栏图标、部署通知）时，鼠须管只重新生成 `build/squirrel.yaml`、重新载入外观，十几毫秒；Rime 不重启，各应用里打了一半的拼音和用 Shift 切换的中英状态都保留。
+  - 其他改动通知鼠须管「安静地」重新部署（不弹通知），和菜单「重新部署」一样会重启 Rime、重开所有输入会话。「雾凇拼音」页约 0.2 秒；「输入」页改的是所有方案共用的 `default.yaml`，每个方案都要重建，英文方案最慢，合计约 3 秒。「应用」页的按应用选项只在打开输入会话时读取，所以也走这条路。
+  - 鼠须管做完回报结果（`success` / `failure` / `unchanged` / `reloaded`）。
+  - librime 按秒比较文件时间，同一秒内的第二次保存会被当成没改，所以 App 会等过了上次部署的那一秒再保存，必要时再请求一次。
 
-测试：`scripts/test-settings.sh` 在 `~/Library/Rime` 的副本上跑模型测试（YAML 往返、逐行编辑、各页设置），再用 librime 部署这份副本，打字确认改动生效（每页 7 个、模糊音、翻页键、自定义短语），不碰真正的配置。它还用 `.cache/rime-ice/full.zip` 往一个空文件夹离线装一遍雾凇拼音，确认用户自己的设置和短语保留、部署没有错误。截图检查：`SQUIRREL_SETTINGS_USER_DIR=<副本> SQUIRREL_SETTINGS_NO_DEPLOY=1 SQUIRREL_SETTINGS_SNAPSHOT=<输出目录> "/Applications/鼠须管设置.app/Contents/MacOS/SquirrelSettings"`，只截这个 App 自己的窗口。
+测试：`scripts/test-settings.sh` 在 `~/Library/Rime` 的副本上跑模型测试（YAML 往返、逐行编辑、各页设置），再用 librime 部署这份副本，打字确认改动生效（每页 7 个、模糊音、翻页键、自定义短语），不碰真正的配置。它还用 `.cache/rime-ice/full.zip` 往一个空文件夹离线装一遍雾凇拼音，确认用户自己的设置和短语保留、部署没有错误。对真正的鼠须管：`SQUIRREL_SETTINGS_SELFTEST=deploy "/Applications/鼠须管设置.app/Contents/MacOS/SquirrelSettings"` 把外观和每页候选数各改一个来回，确认外观改动只重新载入、Rime 日志里没有重启，文件最后恢复原样（要等 31 秒，glog 才把日志写出来）。截图检查：`SQUIRREL_SETTINGS_USER_DIR=<副本> SQUIRREL_SETTINGS_NO_DEPLOY=1 SQUIRREL_SETTINGS_SNAPSHOT=<输出目录> "/Applications/鼠须管设置.app/Contents/MacOS/SquirrelSettings"`，只截这个 App 自己的窗口。
 
 ## 卷轴模式
 
@@ -169,7 +173,11 @@ scripts/rime-ice.sh --offline   # 用 .cache 里上次下载的版本
 
 - `squirrel` 仓库的分支：
   - `scroll-mode`：卷轴模式功能和测试，基于上游 master，可以单独提 PR；
-  - `ohmyrime`：在 `scroll-mode` 之上，加上 fork 专用改动：按实际安装位置注册输入源、关闭 Sparkle 自动更新、液态玻璃外观和预览工具，以及配合设置 App 的部分（菜单「设置…」、安静部署和部署完成通知 `SquirrelDeployDidFinishNotification`、`SquirrelConfig.open(yaml:)`）。
+  - `ohmyrime`：在 `scroll-mode` 之上，加上 fork 专用改动：按实际安装位置注册输入源、关闭 Sparkle 自动更新、液态玻璃外观和预览工具，以及配合设置 App 的部分：
+    - 菜单「设置…」；
+    - `SquirrelReloadNotification` 的 object 为 `"quiet"` 时安静部署，为 `"style"` 时只重新载入外观、不重启 Rime；
+    - 部署完成通知 `SquirrelDeployDidFinishNotification`；
+    - `SquirrelConfig.open(yaml:)`，供预览用。
 - 测试：先 `make release`，再运行 `squirrel/tests/scroll_mode/run.sh`。
   - 它用真实 librime 和临时用户目录驱动真实的 `SquirrelInputController` / `SquirrelPanel`，检查翻页、展开、选词。
   - 面板截图输出到 `squirrel/build/scroll-harness/out`。

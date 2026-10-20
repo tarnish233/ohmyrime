@@ -132,6 +132,16 @@ final class ConfigFile {
     writtenKeys.contains(key)
   }
 
+  /// Patch entries added, changed or removed since the file was read or saved.
+  var changedKeys: Set<String> {
+    func values(_ document: PatchDocument) -> [String: String] {
+      Dictionary(document.values().map { ($0.key, $0.value.flowText) }, uniquingKeysWith: { first, _ in first })
+    }
+    let before = values(PatchDocument(text: savedText))
+    let after = values(document)
+    return Set(before.keys).union(after.keys).filter { before[$0] != after[$0] }
+  }
+
   /// Sets a value. A new entry is added only when Rime would not read that value anyway, and goes
   /// again when it comes back to it; entries that were in the file stay. nil removes the entry
   /// (back to the default).

@@ -168,34 +168,88 @@ struct Snapshot {
   }
 }
 
-/// SQUIRREL_SETTINGS_SELFTEST=deploy: raises style/scroll_mode/max_rows by one and puts it back,
-/// each time saving and waiting for Squirrel's deploy; the file must end up as it was.
+/// SQUIRREL_SETTINGS_SELFTEST=deploy, with the real Squirrel: a look change and back, which Squirrel
+/// applies by reloading its look, then a page size change and back, a full deploy. Every file must
+/// end up as it was, and Rime's log must show no restart for the look changes.
 @MainActor
 struct DeploySelfTest {
   let store: SettingsStore
 
   func run() async {
-    let file = store.squirrel
+    let start = Self.stamp(Date())
+    print("== a look change (style/scroll_mode/max_rows)")
+    var ok = await roundTrip(store.squirrel, "style/scroll_mode/max_rows", fallback: 5, built: "squirrel.yaml", outcome: "reloaded")
+    let lookEnd = Self.stamp(Date())
+    print("== a change to typing (menu/page_size)")
+    ok = await roundTrip(store.defaults, "menu/page_size", fallback: 5, built: "default.yaml", outcome: "success") && ok
+    // glog writes Rime's INFO log out every 30 s: wait, then have Squirrel log something.
+    print("== Rime's log (waiting 31 s for glog)")
+    try? await Task.sleep(for: .seconds(31))
+    store.deployer.deploy(styleOnly: true)
+    await waitForDeploy()
+    let lines = Self.logLines().filter { $0.stamp >= start }
+    let look = lines.filter { $0.stamp < lookEnd }
+    let full = lines.filter { $0.stamp >= lookEnd }
+    func count(_ lines: [(stamp: String, text: String)], _ text: String) -> Int { lines.filter { $0.text.contains(text) }.count }
+    func check(_ condition: Bool, _ message: String) {
+      print("  \(condition ? "✓" : "✗") \(message)")
+      ok = ok && condition
+    }
+    check(!lines.isEmpty, "read \(lines.count) lines")
+    check(count(look, "engine disposed") == 0 && count(look, "closed db") == 0 && count(look, "starting work thread") == 0,
+          "look changes: Rime kept running, no input session closed, no deploy")
+    check(count(look, "build/squirrel.yaml'") >= 2, "look changes: build/squirrel.yaml rebuilt twice")
+    check(count(full, "starting work thread") >= 2, "page size: deployed twice (\(count(full, "engine disposed")) sessions closed)")
+    exit(ok ? 0 : 1)
+  }
+
+  private func roundTrip(_ file: ConfigFile, _ path: String, fallback: Int, built: String, outcome: String) async -> Bool {
     let before = (try? String(contentsOf: file.customURL, encoding: .utf8)) ?? ""
-    let original = store.int(file, "style/scroll_mode/max_rows") ?? 5
+    let original = store.int(file, path) ?? fallback
+    let key = path.split(separator: "/").last.map(String.init) ?? path
     var ok = true
     for value in [original + 1, original] {
-      store.set(file, "style/scroll_mode/max_rows", .int(value))
-      let start = Date()
+      store.set(file, path, .int(value))
       store.saveNow()
-      // The save may wait for the second after the last deploy.
-      while (store.hasUnsavedChanges || store.deployer.state == .deploying) && Date().timeIntervalSince(start) < 50 {
-        try? await Task.sleep(for: .milliseconds(100))
-      }
-      let deployed = (try? String(contentsOf: RimePaths.buildDir.appending(component: "squirrel.yaml"), encoding: .utf8)) ?? ""
-      let applied = deployed.contains("max_rows: \(value)")
-      print(String(format: "max_rows %d: %@ after %.1f s, build/squirrel.yaml %@", value, "\(store.deployer.state)",
-                   Date().timeIntervalSince(start), applied ? "has it" : "does not have it"))
-      if case .succeeded = store.deployer.state, applied {} else { ok = false }
+      await waitForDeploy()
+      let deployed = (try? String(contentsOf: RimePaths.buildDir.appending(component: built), encoding: .utf8)) ?? ""
+      let applied = deployed.contains("\(key): \(value)")
+      let said = store.deployer.lastOutcome ?? "nothing"
+      var succeeded = false
+      if case .succeeded = store.deployer.state { succeeded = true }
+      let good = succeeded && applied && said == outcome
+      print(String(format: "  %@ %@ %d: %@ in %.0f ms, build/%@ %@", good ? "✓" : "✗", key, value, said,
+                   (store.deployer.lastDuration ?? -1) * 1000, built, applied ? "has it" : "does not have it"))
+      ok = ok && good
     }
     let after = (try? String(contentsOf: file.customURL, encoding: .utf8)) ?? ""
-    print(after == before ? "squirrel.custom.yaml is as it was" : "squirrel.custom.yaml changed")
-    exit(ok && after == before ? 0 : 1)
+    print("  \(after == before ? "✓" : "✗") \(file.fileName) is \(after == before ? "as it was" : "changed")")
+    return ok && after == before
+  }
+
+  private func waitForDeploy() async {
+    let start = Date()
+    while (store.hasUnsavedChanges || store.deployer.state == .deploying) && Date().timeIntervalSince(start) < 50 {
+      try? await Task.sleep(for: .milliseconds(20))
+    }
+  }
+
+  /// glog's time stamps, which sort as text: "20261020 10:23:45.123456".
+  static func stamp(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "yyyyMMdd HH:mm:ss.SSSSSS"
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    return formatter.string(from: date)
+  }
+
+  /// The running Squirrel's Rime log: "I20261020 10:23:45.123456 0x16fdcf000 file.cc:12] text".
+  static func logLines() -> [(stamp: String, text: String)] {
+    let link = RimePaths.logDir.appending(component: "rime.squirrel.INFO")
+    guard let log = try? String(contentsOf: link.resolvingSymlinksInPath(), encoding: .utf8) else { return [] }
+    return log.split(separator: "\n").compactMap { line in
+      guard line.count > 25, line.first == "I" || line.first == "W" || line.first == "E" else { return nil }
+      return (String(line.dropFirst().prefix(24)), String(line))
+    }
   }
 }
 

@@ -100,6 +100,27 @@ MainActor.assumeIsolated {
   check(store.look == .liquidGlass && store.fontFamily == "PingFang SC" && store.highlightWeight == "medium", "reads the look and fonts")
   check(store.isPaging(.minusEqual) && !store.isPaging(.commaPeriod), "reads paging keys")
 
+  // Which saves Squirrel applies by reloading only its look, without restarting Rime
+  check(!store.onlyLookChanged, "nothing changed: nothing to reload")
+  let radius = store.int(store.squirrel, "style/corner_radius") ?? 18
+  let pageSize = store.int(store.defaults, "menu/page_size") ?? 5
+  store.set(store.squirrel, "style/corner_radius", .int(radius + 3))
+  store.set(store.squirrel, "status_icon/show", .bool(false))
+  check(store.onlyLookChanged && store.squirrel.changedKeys == ["style/corner_radius", "status_icon/show"], "style and the status icon: only the look",
+        "\(store.squirrel.changedKeys)")
+  store.set(store.squirrel, "app_options/com.example.editor/ascii_mode", .bool(true))
+  check(!store.onlyLookChanged, "app options need a deploy (Squirrel applies them to new input sessions)")
+  store.set(store.squirrel, "app_options/com.example.editor/ascii_mode", nil)
+  store.set(store.defaults, "menu/page_size", .int(pageSize + 4))
+  check(!store.onlyLookChanged, "a change in default.custom.yaml needs a deploy")
+  store.set(store.defaults, "menu/page_size", .int(pageSize))
+  store.set(store.squirrel, "status_icon/show", nil)
+  store.set(store.squirrel, "style/corner_radius", .int(radius))
+  check(!store.squirrel.isDirty && !store.defaults.isDirty && store.squirrel.changedKeys.isEmpty, "changed back: nothing to save")
+  check(SettingsStore.isLookKey("style/scroll_mode/max_rows") && SettingsStore.isLookKey("preset_color_schemes/mine/name")
+        && !SettingsStore.isLookKey("app_options/com.apple.Terminal/ascii_mode") && !SettingsStore.isLookKey("unsafe/report_bundleid"),
+        "look keys")
+
   store.set(store.squirrel, "style/label_font_point", .int(15))
   check(store.squirrel.isPatched("style/label_font_point"), "a value the base does not have is written")
   store.set(store.squirrel, "style/font_point", .int(17))

@@ -142,10 +142,26 @@ final class SettingsStore {
       }
       return
     }
+    let lookOnly = onlyLookChanged
     let saved = writeChanges()
     if !saved.isEmpty && deploysAfterSaving {
-      deployer.deploy(saved: saved)
+      deployer.deploy(saved: saved, styleOnly: lookOnly && saved == [squirrel.customURL])
     }
+  }
+
+  /// Whether the only unsaved changes are to Squirrel's look: then Squirrel reloads it without
+  /// restarting Rime. App options are not: Squirrel applies them when it opens an input session.
+  var onlyLookChanged: Bool {
+    guard squirrel.isDirty, !defaults.isDirty, !schemaFiles.values.contains(where: \.isDirty),
+          !phrases.isDirty, !installation.isDirty else { return false }
+    let keys = squirrel.changedKeys
+    return !keys.isEmpty && keys.allSatisfy(Self.isLookKey)
+  }
+
+  /// squirrel.yaml keys Squirrel reads again when it reloads its look.
+  nonisolated static func isLookKey(_ key: String) -> Bool {
+    let root = key.split(separator: "/").first.map(String.init) ?? key
+    return ["style", "status_icon", "show_notifications_when", "preset_color_schemes"].contains(root.trimmingCharacters(in: CharacterSet(charactersIn: "+")))
   }
 
   /// Writes the files that changed; returns them.
