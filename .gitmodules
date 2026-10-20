@@ -1,0 +1,4 @@
+[submodule "squirrel"]
+	path = squirrel
+	url = https://github.com/tarnish233/squirrel.git
+	branch = ohmyrime

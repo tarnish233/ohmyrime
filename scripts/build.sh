@@ -4,7 +4,6 @@
 # 如果本机代理（默认 http://127.0.0.1:7890，可用 OHMYRIME_PROXY 覆盖）可用就自动走代理。
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-cd "$root/squirrel"
 
 proxy="${OHMYRIME_PROXY:-http://127.0.0.1:7890}"
 use_proxy() {
@@ -13,6 +12,13 @@ use_proxy() {
     echo "使用代理 $proxy"
   fi
 }
+
+# 鼠须管 fork 是子模块（tarnish233/squirrel 的 ohmyrime 分支）：刚 clone 下来时先取下来
+if [ ! -f "$root/squirrel/Makefile" ]; then
+  use_proxy
+  git -C "$root" submodule update --init squirrel
+fi
+cd "$root/squirrel"
 
 # librime 源码只用于头文件（rime/key_table.h）；二进制用官方预编译版
 if [ ! -f librime/src/rime_api_stdbool.h ]; then

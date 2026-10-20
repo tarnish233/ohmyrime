@@ -12,8 +12,14 @@
 #   scripts/install.sh [--no-rime-ice]
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
-app="$root/squirrel/build/Build/Products/Release/Squirrel.app"
-settings_app="$root/build/settings/鼠须管设置.app"
+# 预编译安装包（scripts/package.sh 打的 zip）解压后，两个 App 就在最上层；否则用本机构建的
+if [ -d "$root/Squirrel.app" ]; then
+  app="$root/Squirrel.app"
+  settings_app="$root/鼠须管设置.app"
+else
+  app="$root/squirrel/build/Build/Products/Release/Squirrel.app"
+  settings_app="$root/build/settings/鼠须管设置.app"
+fi
 dest="/Library/Input Methods/Squirrel.app"
 user_copy="$HOME/Library/Input Methods/Squirrel.app"
 rime_dir="$HOME/Library/Rime"
@@ -27,7 +33,7 @@ for arg in "$@"; do
   esac
 done
 
-[ -d "$app" ] || { echo "未找到构建产物，请先运行 scripts/build.sh" >&2; exit 1; }
+[ -d "$app" ] || { echo "未找到鼠须管：请先运行 scripts/build.sh，或使用预编译安装包" >&2; exit 1; }
 
 # 1. 退出正在运行的鼠须管，下次使用时系统会启动新版本
 pkill -x Squirrel 2>/dev/null && sleep 1 || true
@@ -45,6 +51,7 @@ fi
 #    先完整复制到同目录的临时文件夹，再改名对调。如果先删后拷，app 不在的那几秒里
 #    系统重建输入法缓存，就会把鼠须管丢掉，表现为菜单里选不了鼠须管。
 #    用 ditto 而不是 rsync：Contents/MacOS/rime-install 是脚本，它的签名存放在扩展属性里。
+#    预编译包是从网上下载的，带着隔离标记：没有经过 Apple 公证的输入法会被拦下，所以去掉。
 /usr/bin/osascript - "$app" "$dest" <<'APPLESCRIPT'
 on run argv
   set src to item 1 of argv
@@ -55,6 +62,7 @@ on run argv
   set cmd to "set -e; /bin/rm -rf " & newCopy & " " & oldCopy
   set cmd to cmd & "; /usr/bin/ditto " & quoted form of src & " " & newCopy
   set cmd to cmd & "; /usr/sbin/chown -R root:wheel " & newCopy
+  set cmd to cmd & "; /usr/bin/xattr -dr com.apple.quarantine " & newCopy & " 2>/dev/null || true"
   set cmd to cmd & "; if [ -e " & quoted form of dst & " ]; then /bin/mv " & quoted form of dst & " " & oldCopy & "; fi"
   set cmd to cmd & "; /bin/mv " & newCopy & " " & quoted form of dst
   set cmd to cmd & "; /bin/rm -rf " & oldCopy
@@ -127,6 +135,7 @@ if [ -d "$settings_app" ]; then
   pkill -f "$settings_dest/Contents/MacOS/SquirrelSettings" 2>/dev/null || true
   rm -rf "$settings_dest"
   ditto "$settings_app" "$settings_dest"
+  xattr -dr com.apple.quarantine "$settings_dest" 2>/dev/null || true
   "$lsregister" -f "$settings_dest" 2>/dev/null || true
   echo "已安装：$settings_dest"
 fi

@@ -10,12 +10,13 @@ README 只讲安装和设置 App。这里是实现、配置项和开发说明。
 - [设置 App](#设置-app)
 - [雾凇拼音](#雾凇拼音)
 - [开发](#开发)
+- [发布](#发布)
 
 ## 目录结构
 
 | 路径 | 内容 |
 |---|---|
-| `squirrel/` | 鼠须管 fork，独立 git 仓库（本仓库忽略它），分支见[开发](#开发) |
+| `squirrel/` | 鼠须管 fork，git 子模块：[tarnish233/squirrel](https://github.com/tarnish233/squirrel) 的 `ohmyrime` 分支，见[开发](#开发) |
 | `settings/` | 「鼠须管设置」（SwiftUI） |
 | `rime/` | Rime 用户配置模板，安装时复制到 `~/Library/Rime`，不覆盖已有文件 |
 | `scripts/` | 脚本，见下表 |
@@ -32,18 +33,22 @@ README 只讲安装和设置 App。这里是实现、配置项和开发说明。
 | `rime-smoke.sh` | 冒烟测试：用 librime 部署一份配置副本，打印按键结果 |
 | `test-settings.sh` | 设置 App 的测试 |
 | `readme-shots.sh` | 重新生成 README 截图 |
+| `package.sh` | 打预编译安装包，见[发布](#发布) |
 
 ## 构建与安装
 
 `build.sh`：
+- 刚 clone 下来时，先取 `squirrel` 子模块（它自己的子模块 librime 只取头文件需要的浅克隆）。
 - 第一次运行时下载预编译的 librime 1.17.0（带 lua、octagram、predict 插件）、Sparkle 和默认方案。librime 源码子模块只用来提供头文件。
 - 本机 7890 端口有代理时自动使用。
 - 然后运行 `make release ARCHS=$(uname -m)`，最后构建设置 App。
 
 `install.sh`：
+- 两个 App 从哪来：预编译安装包解压后就在最上层（`Squirrel.app`、`鼠须管设置.app`）；否则用本机构建的产物。
 - 鼠须管装到 `/Library/Input Methods`，会弹一次管理员密码框，只动 `Squirrel.app`。
   - 先完整复制到同目录的临时文件夹，再改名对调。如果先删后拷，app 不在的那几秒里系统重建输入法缓存，就会把鼠须管丢掉。
   - 用 `ditto` 复制，不用 `rsync`：`rsync` 会破坏 `Contents/MacOS/rime-install` 的签名（它存放在扩展属性里）。
+  - 去掉下载带来的隔离标记（`com.apple.quarantine`）：App 没有经过 Apple 公证，带着标记的输入法会被拦下。设置 App 也一样。
 - 雾凇拼音：
   - 装过的就跳过；加 `--no-rime-ice` 不装。
   - 下载失败不中断安装。没装上时，不写入只启用雾凇拼音的 `default.custom.yaml`，鼠须管先用自带的朙月拼音，不会变成只能打英文。
@@ -243,13 +248,25 @@ scripts/rime-ice.sh --offline   # 用 .cache 里上次下载的版本
 
 ## 开发
 
-- `squirrel/` 是 [rime/squirrel](https://github.com/rime/squirrel) 的 clone，有两个本地分支：
+- `squirrel/` 是子模块，指向 fork [tarnish233/squirrel](https://github.com/tarnish233/squirrel)。在子模块里，remote `origin` 是这个 fork，`upstream` 是 [rime/squirrel](https://github.com/rime/squirrel)。两个分支：
   - `scroll-mode`：卷轴模式功能和测试，基于上游 master，可以单独提 PR；
   - `ohmyrime`：在 `scroll-mode` 之上，加上 fork 专用的改动：按实际安装位置注册输入源、关闭 Sparkle 自动更新、液态玻璃外观和预览工具，以及上面[和设置 App 的接口](#怎么生效)。
+- 改了 `squirrel/`：先在子模块里提交并推送到 `origin`，再回到本仓库提交子模块指针（`git add squirrel`）。
 - 测试鼠须管：`scripts/build.sh` 之后运行 `squirrel/tests/scroll_mode/run.sh`。
   - 它用真实 librime 和临时用户目录，驱动真实的 `SquirrelInputController` / `SquirrelPanel`，检查翻页、展开、选词。
   - 面板截图输出到 `squirrel/build/scroll-harness/out`。
 - 本机的终端安全软件会扫描新编译程序的首次运行，扫描期间可能直接结束进程（`Killed: 9`，退出码 137）。
   - `/tmp` 下运行新程序尤其容易被结束，所以测试产物都放在 `build/`。
   - 脚本遇到 137 会重试。
-- 同步上游：`git -C squirrel fetch origin && git -C squirrel rebase origin/master scroll-mode`，再把 `ohmyrime` rebase 到 `scroll-mode`。
+- 同步上游：`git -C squirrel fetch upstream && git -C squirrel rebase upstream/master scroll-mode`，再把 `ohmyrime` rebase 到 `scroll-mode`，用 `--force-with-lease` 推送两个分支，最后提交新的子模块指针。
+
+## 发布
+
+1. 改版本号：`settings/Info.plist` 的 `CFBundleShortVersionString`。
+2. `scripts/build.sh`，跑一遍测试，再运行 `scripts/package.sh`，得到 `build/dist/ohmyrime-<版本>-arm64.zip` 和它的 sha256。
+3. 试装：用 `ditto -x -k` 解压，给所有文件加上 `com.apple.quarantine` 模拟下载，再运行包里的 `bash scripts/install.sh`。
+4. 打标签并发布：`git tag v<版本> && git push origin v<版本>`，然后 `gh release create v<版本> build/dist/ohmyrime-<版本>-arm64.zip build/dist/ohmyrime-<版本>-arm64.zip.sha256`。
+
+- 包里是 ohmyrime 版鼠须管、鼠须管设置、安装 / 卸载脚本、雾凇拼音安装脚本、配置模板、许可证和安装说明。只有 arm64，ad-hoc 签名，没有公证。
+- 用 `ditto -c -k --sequesterRsrc` 打包：扩展属性（包括 `rime-install` 的签名）放在 `__MACOSX` 里，双击解压和 `ditto -x` 都会还原。
+- GitHub 自动生成的「Source code」压缩包不含子模块，从源码构建要用 `git clone`。
