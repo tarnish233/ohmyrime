@@ -4,7 +4,8 @@
 //
 //  rime-ice's options: the default state of its switches, and fuzzy pinyin.
 //  rime_ice.custom.yaml (and double_pinyin_*.custom.yaml for enabled 双拼 schemas).
-//  Installing rime-ice when it is not there, updating it when it is (RimeIceInstaller).
+//  Installing rime-ice when it is not there (the copy the app carries, without downloading),
+//  updating it when it is (the latest release, from GitHub) (RimeIceInstaller).
 //
 
 import SwiftUI
@@ -57,7 +58,7 @@ struct IcePage: View {
           .padding(.vertical, 4)
           IceInstallRow()
         } footer: {
-          Note("从 GitHub 下载最新发布版（约 16 MB），装进 ~/Library/Rime 并设为默认方案。你的 *.custom.yaml、用户词库和自定义短语都会保留；不装它的 squirrel.yaml，外观仍按「外观」页的设置。安装前会把用户文件夹备份到 ~/Library/Application Support/鼠须管设置/Backups。")
+          Note("装 App 自带的版本\(Payload.rimeIceVersion.map { "（\($0)）" } ?? "")，不用下载；装进 ~/Library/Rime 并设为默认方案。你的 *.custom.yaml、用户词库和自定义短语都会保留；不装它的 squirrel.yaml，外观仍按「外观」页的设置。安装前会把用户文件夹备份到 ~/Library/Application Support/鼠须管设置/Backups。")
         }
       }
     }
@@ -123,9 +124,11 @@ struct IceInstallRow: View {
     .padding(.vertical, 2)
   }
 
+  /// Not installed: the copy the app carries. Installed: the latest release.
   private func start() {
     showsLog = false
-    Task { await store.installRimeIce() }
+    let bundled = store.iceInstalled ? nil : Payload.rimeIceArchive
+    Task { await store.installRimeIce(from: bundled.map { .archive($0) } ?? .download) }
   }
 
   private var isFailure: Bool {
@@ -142,7 +145,7 @@ struct IceInstallRow: View {
     case .finished: store.iceInstaller.summary ?? "已安装"
     case .failed: "没有装上"
     case .cancelled: "已取消"
-    case .idle: store.iceInstalled ? "已安装" + (store.iceVersion.map { "：版本 \($0)" } ?? "") : "下载并安装最新版"
+    case .idle: store.iceInstalled ? "已安装" + (store.iceVersion.map { "：版本 \($0)" } ?? "") : "安装雾凇拼音"
     }
   }
 
@@ -152,7 +155,7 @@ struct IceInstallRow: View {
     case .installing: "备份用户文件夹，复制词库、方案和脚本"
     case .failed(let message): message
     case .finished: deployStatus
-    case .idle: store.iceInstalled ? nil : "约 16 MB，一般十几秒装好"
+    case .idle: store.iceInstalled ? nil : (Payload.rimeIceArchive != nil ? "App 自带，不用下载，几秒钟装好" : "从 GitHub 下载，约 16 MB")
     case .cancelled: nil
     }
   }

@@ -14,10 +14,16 @@ import ScreenCaptureKit
 struct Snapshot {
   let store: SettingsStore
   let state: AppState
+  let install: InstallState
   let folder: URL
+
+  /// The pages as they are once ohmyrime is set up: no banner about installing.
+  static let added = InstallState.InputSource(registered: true, enabled: true, selected: true, remembered: true)
+  static let notAdded = InstallState.InputSource(registered: true, enabled: false, selected: false, remembered: false)
 
   func run() async {
     try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    install.simulate(squirrel: .current, inputSource: Self.added)
     try? await Task.sleep(for: .seconds(1))
     NSApp.activate(ignoringOtherApps: true)
     guard let window = NSApp.windows.first(where: { $0.isVisible && $0.canBecomeMain }) else {
@@ -76,7 +82,7 @@ struct Snapshot {
     NSApp.appearance = NSAppearance(named: .aqua)
     state.page = .ice
     let states: [(String, RimeIceInstaller.Phase, [String])] = [
-      ("downloading", .downloading(0.42), ["代理：http://127.0.0.1:7890", "下载：https://github.com/iDvel/rime-ice/releases/latest/download/full.zip"]),
+      ("downloading", .downloading(0.42), ["下载：https://github.com/iDvel/rime-ice/releases/latest/download/full.zip"]),
       ("failed", .failed(RimeIceInstaller.explain(status: 7, log: ["curl: (7) Failed to connect to github.com port 443 after 20001 ms: Couldn't connect to server"])),
        ["下载：https://github.com/iDvel/rime-ice/releases/latest/download/full.zip",
         "curl: (7) Failed to connect to github.com port 443 after 20001 ms: Couldn't connect to server"]),
@@ -92,9 +98,51 @@ struct Snapshot {
       failures += await capture(window, "light-3-ice-\(label)") ? 0 : 1
     }
     store.iceInstaller.show(.idle)
+    if only?.contains("welcome") ?? true {
+      failures += await welcomeShots(window)
+    }
     NSApp.appearance = nil
     print(failures == 0 ? "snapshots done" : "\(failures) snapshot(s) skipped")
     exit(failures == 0 ? 0 : 1)
+  }
+
+  /// The welcome's steps, in made-up states (nothing is installed or run), and the card that
+  /// floats over System Settings.
+  private func welcomeShots(_ window: NSWindow) async -> Int {
+    var failures = 0
+    let shots: [(String, WelcomeStep, SquirrelStatus, InstallState.InputSource, ScriptRunner.Phase, [String])] = [
+      ("install", .install, .missing, Self.notAdded, .idle, []),
+      ("install-running", .install, .missing, Self.notAdded, .running, ["准备鼠须管", "安装鼠须管", "安装雾凇拼音"]),
+      ("add", .add, .current, Self.notAdded, .finished, []),
+      ("choose", .choose, .current, Self.added, .finished, []),
+      ("try", .tryIt, .current, Self.added, .finished, []),
+    ]
+    for (name, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+      NSApp.appearance = NSAppearance(named: appearance)
+      for (index, shot) in shots.enumerated() {
+        let (label, step, squirrel, source, phase, steps) = shot
+        install.simulate(squirrel: squirrel, inputSource: source, deployed: step == .tryIt ? true : nil)
+        install.installer.show(phase, steps: steps)
+        state.welcomeUpdates = false
+        state.welcome = step
+        try? await Task.sleep(for: .seconds(1.2))
+        failures += await capture(window, "\(name)-welcome-\(index + 1)-\(label)") ? 0 : 1
+      }
+    }
+    NSApp.appearance = NSAppearance(named: .aqua)
+    install.simulate(squirrel: .current, inputSource: Self.notAdded)
+    AddGuidePanel.shared.show(install: install)
+    try? await Task.sleep(for: .seconds(1.2))
+    if let panel = NSApp.windows.first(where: { $0 is NSPanel && $0.isVisible && $0.title == "添加鼠须管" }) {
+      let captured = screencapture(["-o", "-l\(panel.windowNumber)"], to: folder.appending(component: "light-welcome-guide-card.png"))
+      print(captured ? "→ light-welcome-guide-card.png" : "✗ guide card")
+      failures += captured ? 0 : 1
+    }
+    AddGuidePanel.shared.close()
+    install.installer.show(.idle)
+    install.simulate(squirrel: .current, inputSource: Self.added)
+    state.welcome = nil
+    return failures
   }
 
   /// SQUIRREL_SETTINGS_SNAPSHOT_README=1 (scripts/readme-shots.sh): the README's pictures, settings-
@@ -121,6 +169,23 @@ struct Snapshot {
     state.previewExpanded = true
     try? await Task.sleep(for: .seconds(1.5))
     failures += await capture(window, "settings-appearance-dark", windowsOnly: true) ? 0 : 1
+    // The welcome as a fresh install shows it (the README's 安装 step by step), at its own size.
+    NSApp.appearance = NSAppearance(named: .aqua)
+    window.setFrame(NSRect(x: 80, y: 130, width: 860, height: 640), display: true)
+    let steps: [(String, WelcomeStep, SquirrelStatus, InstallState.InputSource)] = [
+      ("install-welcome", .install, .missing, Self.notAdded),
+      ("install-add", .add, .current, Self.notAdded),
+      ("install-try", .tryIt, .current, Self.added),
+    ]
+    for (name, step, squirrel, source) in steps {
+      install.simulate(squirrel: squirrel, inputSource: source, deployed: step == .tryIt ? true : nil)
+      state.welcomeUpdates = false
+      state.welcome = step
+      try? await Task.sleep(for: .seconds(1.3))
+      failures += await capture(window, name, windowsOnly: true) ? 0 : 1
+    }
+    state.welcome = nil
+    install.simulate(squirrel: .current, inputSource: Self.added)
     NSApp.appearance = nil
     print(failures == 0 ? "snapshots done" : "\(failures) snapshot(s) skipped")
     exit(failures == 0 ? 0 : 1)
@@ -360,7 +425,7 @@ struct IceInstallSelfTest {
       }
     }
     let wasInstalled = store.iceInstalled
-    let task = Task { await store.installRimeIce(offline: mode == .offline) }
+    let task = Task { await store.installRimeIce(from: mode == .offline ? .cache : .download) }
     var ok = true
     while Date().timeIntervalSince(start) < 300 {
       show()

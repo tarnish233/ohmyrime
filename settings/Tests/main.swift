@@ -102,10 +102,12 @@ MainActor.assumeIsolated {
 
   // Which saves Squirrel applies by reloading only its look, without restarting Rime
   check(!store.onlyLookChanged, "nothing changed: nothing to reload")
+  // Whatever the user's copy says now.
   let radius = store.int(store.squirrel, "style/corner_radius") ?? 18
   let pageSize = store.int(store.defaults, "menu/page_size") ?? 5
+  let statusIcon = store.bool(store.squirrel, "status_icon/show") ?? true
   store.set(store.squirrel, "style/corner_radius", .int(radius + 3))
-  store.set(store.squirrel, "status_icon/show", .bool(false))
+  store.set(store.squirrel, "status_icon/show", .bool(!statusIcon))
   check(store.onlyLookChanged && store.squirrel.changedKeys == ["style/corner_radius", "status_icon/show"], "style and the status icon: only the look",
         "\(store.squirrel.changedKeys)")
   store.set(store.squirrel, "app_options/com.example.editor/ascii_mode", .bool(true))
@@ -114,7 +116,7 @@ MainActor.assumeIsolated {
   store.set(store.defaults, "menu/page_size", .int(pageSize + 4))
   check(!store.onlyLookChanged, "a change in default.custom.yaml needs a deploy")
   store.set(store.defaults, "menu/page_size", .int(pageSize))
-  store.set(store.squirrel, "status_icon/show", nil)
+  store.set(store.squirrel, "status_icon/show", .bool(statusIcon))
   store.set(store.squirrel, "style/corner_radius", .int(radius))
   check(!store.squirrel.isDirty && !store.defaults.isDirty && store.squirrel.changedKeys.isEmpty, "changed back: nothing to save")
   check(SettingsStore.isLookKey("style/scroll_mode/max_rows") && SettingsStore.isLookKey("preset_color_schemes/mine/name")
@@ -154,9 +156,12 @@ MainActor.assumeIsolated {
   store.setSwitchDefault("traditionalization", 0)
   check(!store.schema("rime_ice").isPatched("switches/@2/reset"), "off for a switch without reset keeps the schema's behavior")
 
+  // 用户可能把以词定字设成「不使用」，所以先记下当前值再换回去
+  let selectKeys = store.selectCharacterKeys
   store.setSelectCharacterKeys(.commaPeriod)
-  store.setSelectCharacterKeys(.brackets)
-  check(store.selectCharacterKeys == .brackets && !store.defaults.isPatched("key_binder/select_first_character"), "以词定字 back to [ ] drops the patch")
+  check(store.selectCharacterKeys == .commaPeriod, "以词定字换成 , 和 .")
+  store.setSelectCharacterKeys(selectKeys)
+  check(store.selectCharacterKeys == selectKeys, "以词定字换回原来的：\(selectKeys?.title ?? "不使用")")
 
   store.setSwitchKey(.rightShift, "commit_text")
   store.setHotkey("F4", false)
@@ -232,7 +237,7 @@ if FileManager.default.fileExists(atPath: iceZip.path) {
 
     let done = Flag()
     Task { @MainActor in
-      await store.installRimeIce(offline: true)
+      await store.installRimeIce(from: .cache)
       done.value = true
     }
     let start = Date()
@@ -278,6 +283,50 @@ if FileManager.default.fileExists(atPath: iceZip.path) {
   }
 } else {
   print("== installing rime-ice: skipped (no .cache/rime-ice/full.zip yet: run scripts/rime-ice.sh once)")
+}
+
+// MARK: - Installing ohmyrime
+
+print("== installing ohmyrime")
+let carried = "aaa"
+check(SquirrelStatus.of(installedHash: nil, carriedHash: carried, marker: nil, version: "0.2.0") == .missing, "not installed")
+check(SquirrelStatus.of(installedHash: "aaa", carriedHash: carried, marker: nil, version: "0.2.0") == .current, "the one the app carries")
+check(SquirrelStatus.of(installedHash: "bbb", carriedHash: carried, marker: nil, version: "0.2.0") == .other, "another build: installing replaces it")
+check(SquirrelStatus.of(installedHash: "bbb", carriedHash: carried, marker: InstallMarker(version: "0.10.0", squirrelHash: "bbb"), version: "0.9.0") == .newer,
+      "installed by a newer ohmyrime (0.10.0 > 0.9.0): left alone")
+check(SquirrelStatus.of(installedHash: "bbb", carriedHash: carried, marker: InstallMarker(version: "0.1.0", squirrelHash: "bbb"), version: "0.2.0") == .other,
+      "installed by an older one: an update")
+check(SquirrelStatus.of(installedHash: "ccc", carriedHash: carried, marker: InstallMarker(version: "0.3.0", squirrelHash: "bbb"), version: "0.2.0") == .other,
+      "replaced since (the official Squirrel, say): the record does not count")
+check(SquirrelStatus.of(installedHash: "bbb", carriedHash: nil, marker: nil, version: "0.2.0") == .current, "built without the payload: nothing to offer")
+let weType: [String: Any] = ["Bundle ID": "com.tencent.inputmethod.wetype", "InputSourceKind": "Keyboard Input Method"]
+let squirrelMode: [String: Any] = ["Bundle ID": "im.rime.inputmethod.Squirrel", "Input Mode": "im.rime.inputmethod.Squirrel.Hans", "InputSourceKind": "Input Mode"]
+check(InputSourceRecord.hasSquirrel([weType, squirrelMode]) == true, "finds Squirrel among the added input sources")
+check(InputSourceRecord.hasSquirrel([weType]) == false && InputSourceRecord.hasSquirrel(nil) == nil, "not there; no list at all")
+check(ScriptRunner.explain(status: 1, log: ["==> 安装鼠须管", "0:157: execution error: 用户已取消。 (-128)"]) == "没有输入管理员密码，已取消。",
+      "explains a password dialog cancelled")
+check(ScriptRunner.explain(status: 1, log: ["==> 安装鼠须管", "未找到鼠须管"]) == "未找到鼠须管", "or says the last line")
+let markerFile = sandbox.deletingLastPathComponent().appending(component: "installed.json")
+// As install.sh writes it.
+try? #"{"version": "0.2.0", "squirrelHash": "abc", "date": "2026-10-20T08:00:00Z"}"#.write(to: markerFile, atomically: true, encoding: .utf8)
+check(InstallMarker.read(markerFile) == InstallMarker(version: "0.2.0", squirrelHash: "abc", date: "2026-10-20T08:00:00Z"), "reads install.sh's record")
+
+let script = sandbox.deletingLastPathComponent().appending(component: "steps.sh")
+try? "echo '==> 第一步'\necho 细节\necho '==> 第二步' >&2\nprintf 'no line end'\nexit 3\n".write(to: script, atomically: true, encoding: .utf8)
+MainActor.assumeIsolated {
+  let runner = ScriptRunner()
+  let done = Flag()
+  Task { @MainActor in
+    _ = await runner.run(script)
+    done.value = true
+  }
+  let start = Date()
+  while !done.value && Date().timeIntervalSince(start) < 20 {
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+  }
+  check(runner.steps == ["第一步", "第二步"] && runner.log == ["==> 第一步", "细节", "==> 第二步", "no line end"], "runs a script: steps from both streams, the last line too",
+        "\(runner.steps) \(runner.log)")
+  check(runner.failure == "no line end", "fails with its exit status, says why", runner.failure ?? "nil")
 }
 
 print("")

@@ -21,9 +21,11 @@ enum RimePaths {
   static var buildDir: URL { userDir.appending(component: "build") }
   /// Squirrel's log directory (glog files).
   static var logDir: URL { FileManager.default.temporaryDirectory.appending(component: "rime.squirrel") }
+  /// The app's own folder: backups, and what install.sh installed last (installed.json).
+  nonisolated(unsafe) static var supportDir: URL = FileManager.default.homeDirectoryForCurrentUser
+    .appending(components: "Library", "Application Support", "鼠须管设置")
   /// Where the files are copied before the first change in each session.
-  nonisolated(unsafe) static var backupDir: URL = FileManager.default.homeDirectoryForCurrentUser
-    .appending(components: "Library", "Application Support", "鼠须管设置", "Backups")
+  nonisolated(unsafe) static var backupDir: URL = supportDir.appending(component: "Backups")
 
   /// The user's copy of a file if there is one, the one shipped with Squirrel otherwise.
   static func base(_ name: String) -> URL? {

@@ -3,7 +3,8 @@
 //  鼠须管设置
 //
 //  A settings app for ohmyrime's Squirrel: edits the *.custom.yaml patches in ~/Library/Rime,
-//  and asks Squirrel to deploy after each change.
+//  and asks Squirrel to deploy after each change. It is ohmyrime's installer too: it carries
+//  Squirrel and rime-ice, and shows the welcome (WelcomeView) while they are not set up.
 //
 //  Environment variables, for tests (not arguments: AppKit reads "-key value" pairs from the
 //  command line, and takes a path left over for a file to open, which skips the first window):
@@ -45,13 +46,38 @@ struct LaunchOptions {
 final class AppState {
   var page: Page = .appearance
   var previewExpanded = false
+  /// The welcome's step, in place of the settings; nil: the settings.
+  var welcome: WelcomeStep?
+  /// The welcome only updates an ohmyrime that is set up: it ends after installing.
+  var welcomeUpdates = false
+
+  /// Opens the welcome where there is something to do: installing, adding Squirrel, or (all done)
+  /// choosing the schema again.
+  func showWelcome(_ install: InstallState) {
+    welcomeUpdates = install.installUpdates
+    welcome = install.firstWelcomeStep ?? .choose
+  }
+}
+
+/// The welcome while ohmyrime is not set up, the settings otherwise.
+struct RootView: View {
+  @Environment(AppState.self) private var state
+
+  var body: some View {
+    if state.welcome != nil {
+      WelcomeView()
+    } else {
+      ContentView()
+    }
+  }
 }
 
 @main
 struct SettingsApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @State private var store: SettingsStore
-  @State private var state = AppState()
+  @State private var state: AppState
+  @State private var install: InstallState
 
   init() {
     let options = LaunchOptions.current
@@ -70,20 +96,38 @@ struct SettingsApp: App {
     store.deploysAfterSaving = options.deploys
     _store = State(initialValue: store)
     AppDelegate.store = store
+    let install = InstallState()
+    let state = AppState()
+    // Not in snapshots and self-tests, which drive the window themselves.
+    let environment = ProcessInfo.processInfo.environment
+    if options.snapshotDir == nil && environment["SQUIRREL_SETTINGS_SELFTEST"] == nil && options.userDir == nil,
+       install.firstWelcomeStep != nil {
+      state.showWelcome(install)
+    }
+    _install = State(initialValue: install)
+    _state = State(initialValue: state)
   }
 
   var body: some Scene {
     Window("鼠须管设置", id: "settings") {
-      ContentView()
+      RootView()
         .environment(store)
         .environment(state)
+        .environment(install)
         .frame(minWidth: 780, minHeight: 560)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
           store.reloadChangedFiles()
+          install.refresh()
+        }
+        // The welcome is a short page: a smaller window, back to the settings' size after it.
+        .onChange(of: state.welcome == nil) { _, settings in
+          guard let window = NSApp.windows.first(where: { $0.canBecomeMain }) else { return }
+          window.setContentSize(settings ? NSSize(width: 880, height: 720) : NSSize(width: 860, height: 640))
+          window.center()
         }
         .task {
           if let folder = LaunchOptions.current.snapshotDir {
-            await Snapshot(store: store, state: state, folder: folder).run()
+            await Snapshot(store: store, state: state, install: install, folder: folder).run()
           } else if let test = ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_SELFTEST"] {
             if test == "deploy" {
               await DeploySelfTest(store: store).run()
@@ -96,6 +140,10 @@ struct SettingsApp: App {
     .defaultSize(width: 880, height: 720)
     .windowResizability(.contentMinSize)
     .commands {
+      CommandGroup(after: .appInfo) {
+        Button("欢迎使用 ohmyrime…") { state.showWelcome(install) }
+          .disabled(state.welcome != nil)
+      }
       CommandGroup(replacing: .newItem) {}
       CommandGroup(after: .saveItem) {
         Button("立即保存并部署") { store.redeploy() }

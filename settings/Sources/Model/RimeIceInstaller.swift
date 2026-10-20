@@ -4,7 +4,8 @@
 //
 //  Installs or updates rime-ice (雾凇拼音) with ohmyrime's scripts/rime-ice.sh, which is bundled
 //  in the app, so that the app and the command line do it the same way: download the latest
-//  release, back up the user folder, copy rime-ice in, keeping the user's own files.
+//  release (or take the copy the app carries), back up the user folder, copy rime-ice in, keeping
+//  the user's own files. No proxy of its own: curl goes the way the user's environment says.
 //
 
 import Foundation
@@ -12,6 +13,24 @@ import Observation
 
 @MainActor @Observable
 final class RimeIceInstaller {
+  /// Where rime-ice comes from.
+  enum Source: Equatable {
+    /// The latest release, from GitHub.
+    case download
+    /// The last download, in cacheDir.
+    case cache
+    /// A full.zip: the one the app carries.
+    case archive(URL)
+
+    var arguments: [String] {
+      switch self {
+      case .download: []
+      case .cache: ["--offline"]
+      case .archive(let url): ["--from", url.path]
+      }
+    }
+  }
+
   enum Phase: Equatable {
     case idle
     /// With curl's progress, once it has given one.
@@ -32,7 +51,7 @@ final class RimeIceInstaller {
 
   /// The script and ohmyrime's config templates: the app's own (scripts/build-settings.sh copies
   /// them in), or the repository's in tests.
-  nonisolated(unsafe) static var script = Bundle.main.url(forResource: "rime-ice", withExtension: "sh")
+  nonisolated(unsafe) static var script = Bundle.main.url(forResource: "rime-ice", withExtension: "sh", subdirectory: "scripts")
   nonisolated(unsafe) static var templates = Bundle.main.resourceURL?.appending(component: "rime")
   /// Where the download is kept.
   nonisolated(unsafe) static var cacheDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -72,7 +91,7 @@ final class RimeIceInstaller {
   }
 
   /// Runs the script, backing the user folder up into `backupDir`; returns whether it succeeded.
-  func run(offline: Bool = false, backupDir: URL) async -> Bool {
+  func run(from source: Source = .download, backupDir: URL) async -> Bool {
     guard process == nil else { return false }
     guard let script = Self.script, FileManager.default.fileExists(atPath: script.path) else {
       phase = .failed("App 里没有安装脚本 rime-ice.sh，请用 scripts/build-settings.sh 重新构建。")
@@ -83,11 +102,11 @@ final class RimeIceInstaller {
     finishedAt = nil
     cancelled = false
     pending = [:]
-    phase = offline ? .installing : .downloading(nil)
+    phase = source == .download ? .downloading(nil) : .installing
 
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")
-    process.arguments = [script.path] + (offline ? ["--offline"] : [])
+    process.arguments = [script.path] + source.arguments
     var environment = ProcessInfo.processInfo.environment
     environment["OHMYRIME_RIME_DIR"] = RimePaths.userDir.path
     environment["OHMYRIME_CACHE_DIR"] = Self.cacheDir.path
@@ -96,9 +115,6 @@ final class RimeIceInstaller {
     environment["OHMYRIME_NO_RELOAD"] = "1"
     if let templates = Self.templates {
       environment["OHMYRIME_TEMPLATES_DIR"] = templates.path
-    }
-    if environment["OHMYRIME_PROXY"] == nil, let proxy = Self.systemProxy {
-      environment["OHMYRIME_PROXY"] = proxy
     }
     process.environment = environment
     let output = Pipe()
@@ -260,28 +276,11 @@ final class RimeIceInstaller {
       if curl.contains("(22)") {
         return "下载失败，服务器返回错误，稍后再试。（\(curl)）"
       }
-      return "连不上 GitHub，检查网络或代理后再试。（\(curl)）"
+      return "连不上 GitHub，检查网络后再试。（\(curl)）"
     }
-    if let last = log.last(where: { !$0.hasPrefix("代理：") && !$0.hasPrefix("下载：") && !$0.hasPrefix("解压：") }) {
+    if let last = log.last(where: { !$0.hasPrefix("下载：") && !$0.hasPrefix("解压：") }) {
       return "安装没有完成：\(last)"
     }
     return "安装脚本出错（退出码 \(status)）"
-  }
-
-  /// The system's HTTPS (or SOCKS) proxy, for curl, which only reads environment variables. The
-  /// script tries it first and goes direct when it does not answer.
-  nonisolated static var systemProxy: String? {
-    guard let settings = CFNetworkCopySystemProxySettings()?.takeRetainedValue() as? [String: Any] else { return nil }
-    if settings[kCFNetworkProxiesHTTPSEnable as String] as? Int == 1,
-       let host = settings[kCFNetworkProxiesHTTPSProxy as String] as? String,
-       let port = settings[kCFNetworkProxiesHTTPSPort as String] as? Int {
-      return "http://\(host):\(port)"
-    }
-    if settings[kCFNetworkProxiesSOCKSEnable as String] as? Int == 1,
-       let host = settings[kCFNetworkProxiesSOCKSProxy as String] as? String,
-       let port = settings[kCFNetworkProxiesSOCKSPort as String] as? Int {
-      return "socks5h://\(host):\(port)"
-    }
-    return nil
   }
 }

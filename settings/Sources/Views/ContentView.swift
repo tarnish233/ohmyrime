@@ -60,6 +60,7 @@ struct SidebarIcon: View {
 struct ContentView: View {
   @Environment(SettingsStore.self) private var store
   @Environment(AppState.self) private var state
+  @Environment(InstallState.self) private var install
 
   var body: some View {
     @Bindable var state = state
@@ -73,6 +74,7 @@ struct ContentView: View {
       .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
     } detail: {
       VStack(spacing: 0) {
+        InstallBanner()
         if !store.problems.isEmpty || store.saveError != nil {
           ProblemBanner(messages: store.problems + [store.saveError].compactMap { $0 })
         }
@@ -117,6 +119,36 @@ struct ProblemBanner: View {
     }
     .padding(10)
     .background(.orange.opacity(0.12))
+  }
+}
+
+/// Squirrel is not installed, not added to the input sources, or this app carries another build
+/// of it: the welcome sorts it out.
+struct InstallBanner: View {
+  @Environment(AppState.self) private var state
+  @Environment(InstallState.self) private var install
+
+  var body: some View {
+    if let content {
+      HStack(spacing: 8) {
+        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+        Text(content.message).font(.callout)
+        Spacer()
+        Button(content.action) { state.showWelcome(install) }
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .background(.orange.opacity(0.12))
+    }
+  }
+
+  private var content: (message: String, action: String)? {
+    switch install.squirrel {
+    case .missing: return ("鼠须管还没有安装。", "安装…")
+    case .other: return ("这个 App 带着 ohmyrime \(Payload.version) 的鼠须管，和已经装的不一样。", "更新…")
+    case .current, .newer: break
+    }
+    return install.inputSource.isAdded ? nil : ("鼠须管还没有添加到输入法，现在用不了。", "添加…")
   }
 }
 

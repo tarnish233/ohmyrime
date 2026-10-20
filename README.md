@@ -6,26 +6,23 @@ macOS 上的 Rime 输入法：鼠须管加上卷轴模式和液态玻璃候选�
 
 ## 安装
 
-需要 Apple 芯片的 Mac，macOS 14 或更新（液态玻璃外观要 macOS 26）。
+需要 Apple 芯片的 Mac，macOS 14 或更新（液态玻璃外观要 macOS 26）。鼠须管、雾凇拼音和这个设置 App 都在安装包里，装的时候不用联网。
 
-1. 安装 ohmyrime，两种方式任选一种：
-   - 预编译包：从 [Releases](https://github.com/tarnish233/ohmyrime/releases) 下载 `ohmyrime-<版本>-arm64.zip`，解压后在「终端」里进入这个文件夹，运行 `bash scripts/install.sh`。
-   - 从源码构建（需要 Xcode）：
+1. 从 [Releases](https://github.com/tarnish233/ohmyrime/releases/latest) 下载 `ohmyrime.zip`，解压后双击「鼠须管设置」。
+2. 这个 App 没有经过 Apple 公证，第一次打开会被系统拦下：打开「系统设置 → 隐私与安全性」，点「仍要打开」，输入密码。
+3. 欢迎页点「安装」，输入一次管理员密码：鼠须管装到 `/Library/Input Methods`，雾凇拼音直接装进 `~/Library/Rime`。
+4. 点「添加鼠须管」：系统可能先弹出确认框，点「允许」；没有直接加上的话，App 会打开系统设置的「键盘」页，照右上角提示卡点几下。加好后会自己打勾。
+5. 选拼音方案和中英切换键，在「试一试」里打几个字就完成了。
 
-     ```bash
-     git clone https://github.com/tarnish233/ohmyrime.git && cd ohmyrime
-     scripts/build.sh     # 构建鼠须管和「鼠须管设置」，第一次要下载依赖
-     scripts/install.sh
-     ```
+从源码构建（需要 Xcode）：`git clone https://github.com/tarnish233/ohmyrime.git && cd ohmyrime && scripts/build.sh && scripts/install.sh`。
 
-   安装时会弹一次管理员密码框；还没装雾凇拼音会一并下载。
+| | | |
+|---|---|---|
+| ![安装](docs/images/install-welcome.png)<br>**安装**：鼠须管和雾凇拼音都在这一个 App 里 | ![添加输入法](docs/images/install-add.png)<br>**添加输入法**：照提示点几下，加好自动打勾 | ![试一试](docs/images/install-try.png)<br>**试一试**：顺便告诉你几个常用按键 |
 
-2. 第一次安装后，在系统里添加一次输入法：⌘Q 退出「系统设置」再打开 →「键盘」→ 文字输入「输入法」→「编辑…」→「+」→「简体中文」→「鼠须管」。
-3. 在菜单栏的输入法菜单里选「鼠须管」开始打字。候选条按 Tab 展开更多候选，Shift+Tab 收起。
-
-- 更新：下载新版本的预编译包再安装；或者 `git pull --recurse-submodules` 后重新运行 `scripts/build.sh` 和 `scripts/install.sh`。
-- 卸载：`scripts/uninstall.sh`，默认保留词库和配置；加 `--purge` 一并删除。
-- 遇到问题（只能打英文、菜单里选不中鼠须管）：见[常见问题](docs/development.md#常见问题)。
+- 更新：下载新版 `ohmyrime.zip` 再装一次；你的配置和用户词库都保留。
+- 卸载：设置 App 的「词库与部署 → 卸载」，或者 `bash scripts/uninstall.sh`。默认保留配置和词库。
+- 遇到问题（打不出字、菜单里选不中鼠须管、第一次打开被拦）：见[常见问题](docs/development.md#常见问题)。
 
 ## 鼠须管设置
 

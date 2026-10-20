@@ -17,7 +17,7 @@ README 只讲安装和设置 App。这里是实现、配置项和开发说明。
 | 路径 | 内容 |
 |---|---|
 | `squirrel/` | 鼠须管 fork，git 子模块：[tarnish233/squirrel](https://github.com/tarnish233/squirrel) 的 `ohmyrime` 分支，见[开发](#开发) |
-| `settings/` | 「鼠须管设置」（SwiftUI） |
+| `settings/` | 「鼠须管设置」（SwiftUI）。它同时是安装器：里面带着鼠须管和雾凇拼音 |
 | `rime/` | Rime 用户配置模板，安装时复制到 `~/Library/Rime`，不覆盖已有文件 |
 | `scripts/` | 脚本，见下表 |
 | `tools/` | `rime-smoke.c`：用本地 librime 部署配置并打印按键结果；`tis-props.swift`：只读查看系统输入法框架里的输入源状态 |
@@ -31,7 +31,8 @@ README 只讲安装和设置 App。这里是实现、配置项和开发说明。
 | `uninstall.sh` | 卸载 |
 | `rime-ice.sh` | 安装或更新雾凇拼音 |
 | `rime-smoke.sh` | 冒烟测试：用 librime 部署一份配置副本，打印按键结果 |
-| `test-settings.sh` | 设置 App 的测试 |
+| `test-settings.sh` | 设置 App 的模型测试 |
+| `test-install.sh` | 安装 / 卸载脚本的测试，都在 `build/install-test` 的假目录里做 |
 | `readme-shots.sh` | 重新生成 README 截图 |
 | `package.sh` | 打预编译安装包，见[发布](#发布) |
 
@@ -40,41 +41,68 @@ README 只讲安装和设置 App。这里是实现、配置项和开发说明。
 `build.sh`：
 - 刚 clone 下来时，先取 `squirrel` 子模块（它自己的子模块 librime 只取头文件需要的浅克隆）。
 - 第一次运行时下载预编译的 librime 1.17.0（带 lua、octagram、predict 插件）、Sparkle 和默认方案。librime 源码子模块只用来提供头文件。
-- 本机 7890 端口有代理时自动使用。
-- 然后运行 `make release ARCHS=$(uname -m)`，最后构建设置 App。
+- 然后运行 `make release ARCHS=$(uname -m)`，最后运行 `build-settings.sh`。
+- 脚本不设置代理：需要的话自己 `export https_proxy=…`，git 和 curl 都会用。
 
-`install.sh`：
-- 两个 App 从哪来：预编译安装包解压后就在最上层（`Squirrel.app`、`鼠须管设置.app`）；否则用本机构建的产物。
+`build-settings.sh`：
+- 编出 `build/settings/鼠须管设置.app`，里面除了 App 自己，还有它当安装器要用的东西（`Contents/Resources`）：
+
+  | 内容 | 是什么 |
+  |---|---|
+  | `Payload/Squirrel.zip` | 刚构建好的鼠须管（`ditto` 压缩，保留签名在扩展属性里） |
+  | `Payload/rime-ice.zip` | 雾凇拼音的 `full.zip`（`.cache/rime-ice/full.zip`，没有就先下载一次） |
+  | `scripts/` | `install.sh`、`uninstall.sh`、`rime-ice.sh` |
+  | `rime/` | ohmyrime 的配置模板 |
+
+- `Info.plist` 里记下 `OhmyrimeSquirrelHash`（鼠须管可执行文件的 SHA-256）和 `OhmyrimeRimeIceVersion`。设置 App 用它判断已装的鼠须管是不是自己带的这一版。
+
+`install.sh`：同一个脚本两种用法，靠「身边有没有 `Payload/`」自己判断。
+
+- **App 里那一份**（`Contents/Resources/scripts/install.sh`）：鼠须管从 `Payload/Squirrel.zip` 解压，雾凇拼音用 `Payload/rime-ice.zip`，全程不联网。
+- **仓库里那一份**（`scripts/install.sh`）：用 `squirrel/build` 和 `build/settings` 的产物，雾凇拼音用 `.cache/rime-ice/full.zip`。
 - 鼠须管装到 `/Library/Input Methods`，会弹一次管理员密码框，只动 `Squirrel.app`。
   - 先完整复制到同目录的临时文件夹，再改名对调。如果先删后拷，app 不在的那几秒里系统重建输入法缓存，就会把鼠须管丢掉。
   - 用 `ditto` 复制，不用 `rsync`：`rsync` 会破坏 `Contents/MacOS/rime-install` 的签名（它存放在扩展属性里）。
   - 去掉下载带来的隔离标记（`com.apple.quarantine`）：App 没有经过 Apple 公证，带着标记的输入法会被拦下。设置 App 也一样。
-- 雾凇拼音：
-  - 装过的就跳过；加 `--no-rime-ice` 不装。
-  - 下载失败不中断安装。没装上时，不写入只启用雾凇拼音的 `default.custom.yaml`，鼠须管先用自带的朙月拼音，不会变成只能打英文。
-- 用户配置只补充缺失的文件。
-- 注册并启用输入源，不切换当前输入法。之后再确认几次，丢了就重新注册。
-- 「鼠须管设置」装到 `/Applications`，不用密码；写不了时装到 `~/Applications`。
-- 最后在后台启动一次鼠须管：新装的输入法在本次登录内可能拉不起来。
-
-macOS 27 上的两点限制：
-- 命令行启用第三方输入法（`TISEnableInputSource`）会返回成功但不生效，所以第一次要在系统设置里手动添加。
-- 系统重建输入法列表时不扫描 `~/Library/Input Methods`，装在那里会时有时无，所以装到 `/Library/Input Methods`。
+- 雾凇拼音：装过的就跳过（更新在设置 App 里做）；加 `--no-rime-ice` 不装。没装上时不写只启用雾凇拼音的 `default.custom.yaml`，鼠须管先用自带的朙月拼音，不会变成只能打英文。
+- 用户配置只补充缺失的文件，不覆盖已有修改。
+- 注册输入源，但**不启用、不切换**：添加第三方输入法要用户自己在系统设置里做。
+  - 重装（`com.apple.inputsources` 里本来就有鼠须管）时会再确认几次，丢了就重新注册。
+  - 第一次安装不等：用户去系统设置添加时缓存早就建好了。
+- 「鼠须管设置」装到 `/Applications`，不用密码；写不了时装到 `~/Applications`。正在运行的旧副本会被关掉，运行安装的这个 App 自己不关。
+- 最后写下 `~/Library/Application Support/鼠须管设置/installed.json`（版本、鼠须管哈希、时间），并在后台启动一次鼠须管：新装的输入法在本次登录内可能拉不起来。
+- 以 `==> ` 开头的行是步骤，设置 App 用它们显示进度。`OHMYRIME_TEST_ROOT=<目录>` 把安装位置都换到那个目录，并跳过要系统配合的步骤（管理员密码、注册、结束和启动进程），供 `test-install.sh` 使用。
 
 `uninstall.sh`：
-- 禁用输入源，删除鼠须管和「鼠须管设置」。
-- 默认保留 `~/Library/Rime`；加 `--purge` 一并删除。
+- 从输入法里移除鼠须管，删除鼠须管和「鼠须管设置」。
+- 默认保留 `~/Library/Rime`；加 `--purge` 连同配置、词库、备份、缓存和偏好设置一起删除。
+- 设置 App 的「词库与部署 → 卸载」运行的是 App 里那一份，参数和命令行一样；删完 App 自己退出。
+
+macOS 上的三点限制（照实测写的）：
+- 命令行启用第三方输入法（`TISEnableInputSource`）不靠得住：可能返回成功但没生效，所以添加这一步要用户在系统设置里点几下，App 只负责引导和确认。
+- 系统重建输入法列表时不扫描 `~/Library/Input Methods`，装在那里会时有时无，所以装到 `/Library/Input Methods`。
+- 没公证的 App 第一次打开会被 Gatekeeper 拦下，要在「隐私与安全性」里点「仍要打开」。安装脚本能去掉隔离标记，所以被拦的只有用户从浏览器下载的这一个 App。
 
 ## 常见问题
 
+**双击「鼠须管设置」打不开，说无法验证开发者**
+- 原因：App 没有经过 Apple 公证。macOS 15 起不能右键打开，要显式放行。
+- 解决：打开「系统设置 → 隐私与安全性」，在「安全性」里点「仍要打开」，输入密码。
+
+**欢迎页点「添加鼠须管」之后还没加上**
+- macOS 只让用户自己添加第三方输入法，App 不能代做。两种情况：
+  - 系统弹出「允许××启用第三方输入法」：点「允许」。
+  - 没弹或点了没生效：App 会打开系统设置的「键盘」页，并在右上角浮一张提示卡，照三步做：输入法右边的「编辑…」→ 左下角「+」→「简体中文」里的「鼠须管」。
+- 加好后欢迎页会自己打勾，提示卡也会消失。以后随时可以从菜单栏「鼠须管设置 → 欢迎使用 ohmyrime…」回到这一步。
+
 **切到鼠须管后只能打英文、没有候选框**
 - 原因：鼠须管进程没起来，日志里是 `imklaunchagent: LaunchInputMethod() Error, status=-50`。
-- 解决：运行 `open -g "/Library/Input Methods/Squirrel.app"`。`install.sh` 最后会自动做这一步；注销重新登录后，由系统自动启动。
+- 解决：运行 `open -g "/Library/Input Methods/Squirrel.app"`，或者点欢迎页「试一试」里的「启动鼠须管」。`install.sh` 最后会自动做这一步；注销重新登录后，由系统自动启动。
 - 另一种可能：启用的方案找不到方案文件，比如没装雾凇拼音。设置 App 会在每页顶部提示，「输入」页把这些方案标成「未安装」。
 
 **菜单里有鼠须管却选不中**（系统设置里也可能加不上）
 - 原因：系统的输入法缓存把它丢了，常见于刚替换完 app。
-- 解决：运行 `"/Library/Input Methods/Squirrel.app/Contents/MacOS/Squirrel" --register-input-source` 重新注册。`install.sh` 安装后会确认几次，丢了就自动重新注册。
+- 解决：运行 `"/Library/Input Methods/Squirrel.app/Contents/MacOS/Squirrel" --register-input-source` 重新注册。重装时 `install.sh` 会自动确认几次，丢了就重新注册；欢迎页在等用户添加时也会每秒看一眼，发现丢了就重新注册。
 - 查看系统是否认得它：运行 `swiftc tools/tis-props.swift -o build/tis-props && build/tis-props rime`，能列出 `im.rime.inputmethod.Squirrel.Hans` 就说明认得。
 
 ## 卷轴模式
@@ -152,6 +180,22 @@ patch:
 
 ## 设置 App
 
+### 欢迎页和安装器
+
+- 打开时先看状态（`InstallState`）：装的是不是自己带的这一版鼠须管、有没有加进输入法、鼠须管在不在运行。
+  - 有事情要做，就显示欢迎页：安装 → 添加输入法 → 选择方案 → 试一试。
+  - 都装好了就直接是设置。菜单里的「欢迎使用 ohmyrime…」随时可以回到欢迎页。
+- 从下载目录打开时，装完会自动换成 `/Applications` 里装着的那一份（`finishWelcome`），下载的那份退出。
+- 「安装」运行 App 里的 `install.sh`，输出到界面（`ScriptRunner` 把 `==>` 开头的行当步骤）。
+  - 换掉的是自己带的上一版、或者官方鼠须管：`OhmyrimeSquirrelHash` 和已装的比对。
+  - 已装的是另一个更新版本（`installed.json` 记着是更新版本装的）：只提示，不降级。
+- 「添加输入法」先请系统帮忙（`TISEnableInputSource`），不成就打开系统设置的「键盘」并浮出提示卡（`AddGuidePanel`，`nonactivatingPanel`，不抢焦点）。
+  - 等的时候每秒看一次状态：`com.apple.inputsources` 的 `AppleEnabledThirdPartyInputSources` 里有鼠须管、并且 TIS 说它已启用，才算加好。
+  - 另外两种记录位置也兼容：早期的 `com.apple.HIToolbox` 的 `AppleEnabledInputSources`。
+  - 发现系统又把它丢了（TIS 里没有），就重新注册一次。
+- 每页顶部的提示条（`InstallBanner`）在鼠须管没装、版本不一样、或没加进输入法时出现，点一下回到欢迎页。
+- 「词库与部署 → 卸载」运行 App 里的 `uninstall.sh`，可以选连配置和词库一起删；删完 App 自己退出。
+
 ### 页面和写入的文件
 
 | 页面 | 能设置的 | 写到 |
@@ -195,21 +239,22 @@ patch:
 
 ### 安装雾凇拼音
 
-- 没装雾凇拼音时，「雾凇拼音」页有「安装雾凇拼音」按钮；装好后同一个位置变成「更新到最新版」。
+- 没装雾凇拼音时，「雾凇拼音」页的按钮用 App 自带的那一份（`Payload/rime-ice.zip`），不用联网，几乎瞬间装好。装好后同一个位置变成「更新到最新版」，那才下载。
 - 按钮运行打包在 App 里的 `scripts/rime-ice.sh`，和命令行装的完全一样：先备份用户文件夹，再装雾凇拼音（不装它的 `squirrel.yaml`），保留你的 `*.custom.yaml`、用户词库和自定义短语。
 - 下载显示进度，可以取消。装好后设为默认方案并部署，第一次要编译词库，十几秒。
-- 下载先用系统代理，或本机 7890 端口的代理，连不上就直接连接。
+- 下载不带自己的代理：curl 照用户环境里的 `https_proxy` 之类设置走，脚本不设置也不读取别的代理。
 - 下载缓存在 `~/Library/Caches/im.rime.ohmyrime.settings`。整个用户文件夹的备份每份约 16 MB，只保留最近 3 份。
 
 ### 测试
 
 | 命令 | 检查什么 |
 |---|---|
+| `scripts/test-install.sh` | 安装、重装、卸载、`--purge`、`--no-rime-ice`、以及「App 里那一份」的 `install.sh`，都在 `build/install-test` 的假目录里做：不碰 `/Library/Input Methods`，不弹密码框，不动 `~/Library/Rime` |
 | `scripts/test-settings.sh` | 在 `~/Library/Rime` 的副本上跑模型测试（YAML 往返、逐行编辑、各页设置），再用 librime 部署这份副本，打字确认改动生效。还会用 `.cache/rime-ice/full.zip` 往空文件夹离线装一遍雾凇拼音。不碰真正的配置 |
 | `SQUIRREL_SETTINGS_SELFTEST=deploy …/SquirrelSettings` | 对正在用的鼠须管，把外观和每页候选数各改一个来回，确认外观改动只重新载入、Rime 日志里没有重启，文件最后恢复原样。要等 31 秒，glog 才把日志写出来 |
 | `SQUIRREL_SETTINGS_SELFTEST=install-ice`（或 `-offline`、`-cancel`） | 配合 `SQUIRREL_SETTINGS_USER_DIR=<副本>`，按页面上的按钮那样装雾凇拼音：下载、离线安装、中途取消 |
-| `SQUIRREL_SETTINGS_SNAPSHOT=<目录>` | 配合 `SQUIRREL_SETTINGS_USER_DIR=<副本>` 和 `SQUIRREL_SETTINGS_NO_DEPLOY=1`，截取每页的浅色、深色截图。只截这个 App 自己的窗口；`SQUIRREL_SETTINGS_SNAPSHOT_PAGES=input,ice` 只截部分页面 |
-| `scripts/readme-shots.sh` | 重新生成 `docs/images/settings-*.png`。用干净的用户文件夹（配置模板加离线安装的雾凇拼音），截图里没有个人数据；截图时窗口会切到最前面约 15 秒 |
+| `SQUIRREL_SETTINGS_SNAPSHOT=<目录>` | 配合 `SQUIRREL_SETTINGS_USER_DIR=<副本>` 和 `SQUIRREL_SETTINGS_NO_DEPLOY=1`，截取每页的浅色、深色截图。只截这个 App 自己的窗口；`SQUIRREL_SETTINGS_SNAPSHOT_PAGES=input,ice` 只截部分页面；`welcome` 只截欢迎页的四步和浮在系统设置上的提示卡 |
+| `scripts/readme-shots.sh` | 重新生成 `docs/images/settings-*.png` 和 `install-*.png`（欢迎页）。用干净的用户文件夹（配置模板加离线安装的雾凇拼音），截图里没有个人数据；截图时窗口会切到最前面约 15 秒 |
 
 `…/SquirrelSettings` 指 `"/Applications/鼠须管设置.app/Contents/MacOS/SquirrelSettings"`。这些开关用环境变量传：用命令行参数时，AppKit 会把多出来的路径当成要打开的文件。
 
@@ -228,7 +273,9 @@ scripts/rime-ice.sh --offline   # 用 .cache 里上次下载的版本
 - `custom_phrase.txt` 只在没有时才复制；
 - 每次安装前，把 `~/Library/Rime`（不含 `build/`）备份到 `.backup/Rime-<时间>.tar.gz`。
 
-下载先走代理：本机 7890 端口，或用 `OHMYRIME_PROXY` 指定。下载文件的服务器经代理不通时，改为直接连接；断线会自动重试。设置 App 运行它时，用环境变量指定目录（`OHMYRIME_RIME_DIR`、`OHMYRIME_CACHE_DIR`、`OHMYRIME_BACKUP_DIR`、`OHMYRIME_TEMPLATES_DIR`、`OHMYRIME_NO_RELOAD`），说明见脚本开头。
+脚本不设置也不读取代理：要的话自己 `export https_proxy=…`，curl 会用；断线会自动重试（`--retry-all-errors`）。
+
+三种用法：`rime-ice.sh`（下载最新版）、`--offline`（用 `.cache` 里上次下载的）、`--from <full.zip>`（用指定的一份，安装器就是这么用 App 自带的）。设置 App 运行它时，还用环境变量指定目录（`OHMYRIME_RIME_DIR`、`OHMYRIME_CACHE_DIR`、`OHMYRIME_BACKUP_DIR`、`OHMYRIME_TEMPLATES_DIR`、`OHMYRIME_NO_RELOAD`），说明见脚本开头。
 
 | 输入 | 结果 |
 |---|---|
@@ -263,10 +310,12 @@ scripts/rime-ice.sh --offline   # 用 .cache 里上次下载的版本
 ## 发布
 
 1. 改版本号：`settings/Info.plist` 的 `CFBundleShortVersionString`。
-2. `scripts/build.sh`，跑一遍测试，再运行 `scripts/package.sh`，得到 `build/dist/ohmyrime-<版本>-arm64.zip` 和它的 sha256。
-3. 试装：用 `ditto -x -k` 解压，给所有文件加上 `com.apple.quarantine` 模拟下载，再运行包里的 `bash scripts/install.sh`。
-4. 打标签并发布：`git tag v<版本> && git push origin v<版本>`，然后 `gh release create v<版本> build/dist/ohmyrime-<版本>-arm64.zip build/dist/ohmyrime-<版本>-arm64.zip.sha256`。
+2. `scripts/build.sh`，跑一遍测试（`squirrel/tests/scroll_mode/run.sh`、`scripts/test-settings.sh`、`scripts/test-install.sh`），再运行 `scripts/package.sh`，得到 `build/dist/ohmyrime.zip` 和它的 sha256。
+3. 试装：`ditto -x -k` 解压，给 App 加上 `com.apple.quarantine` 模拟下载，双击打开，照欢迎页走一遍；也可以先 `open` 一份看被拦的样子。
+4. 打标签并发布：`git tag v<版本> && git push origin v<版本>`，然后 `gh release create v<版本> build/dist/ohmyrime.zip build/dist/ohmyrime.zip.sha256`。
 
-- 包里是 ohmyrime 版鼠须管、鼠须管设置、安装 / 卸载脚本、雾凇拼音安装脚本、配置模板、许可证和安装说明。只有 arm64，ad-hoc 签名，没有公证。
-- 用 `ditto -c -k --sequesterRsrc` 打包：扩展属性（包括 `rime-install` 的签名）放在 `__MACOSX` 里，双击解压和 `ditto -x` 都会还原。
-- GitHub 自动生成的「Source code」压缩包不含子模块，从源码构建要用 `git clone`。
+- 包里只有「鼠须管设置」：鼠须管和雾凇拼音在它的 `Contents/Resources/Payload` 里，打开 App 就装。App 约 30 MB。
+- 文件名不带版本号，`releases/latest/download/ohmyrime.zip` 永远是最新版，README 里只写这一条。版本号见 App 和发布页。
+- 只有 arm64，ad-hoc 签名，没有公证；所以第一次打开要在「隐私与安全性」里放行。要双击就能装，得买 Apple 开发者账号（每年 99 美元）签名并公证。
+- 用 `ditto -c -k --sequesterRsrc` 打包：扩展属性（包括鼠须管里 `rime-install` 的签名）放在 `__MACOSX` 里，双击解压和 `ditto -x` 都会还原。`package.sh` 会先解压一份 `Payload/Squirrel.zip` 检查签名。
+- GitHub 自动生成的「Source code」压缩包不含子模块，从源码构建要用 `git clone --recurse-submodules`。

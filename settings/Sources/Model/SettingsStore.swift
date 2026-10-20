@@ -213,6 +213,23 @@ final class SettingsStore {
     return allFiles.contains(where: \.isDirty) || phrases.isDirty || installation.isDirty
   }
 
+  /// Drops the changes not saved yet: uninstalling deletes the user folder, and saving them when
+  /// the app quits would bring it back.
+  func discardUnsavedChanges() {
+    saveTask?.cancel()
+    saveTask = nil
+    for file in allFiles where file.isDirty {
+      file.reload()
+    }
+    if phrases.isDirty {
+      phrases.reload()
+    }
+    if installation.isDirty {
+      installation.reload()
+    }
+    revision += 1
+  }
+
   func redeploy() {
     if hasUnsavedChanges {
       saveNow()
@@ -273,7 +290,7 @@ final class SettingsStore {
 
   /// Installs rime-ice, or updates it, with the bundled scripts/rime-ice.sh; then makes it the
   /// default schema if it was not enabled, and deploys (the first deploy builds its dictionaries).
-  func installRimeIce(offline: Bool = false) async {
+  func installRimeIce(from source: RimeIceInstaller.Source = .download) async {
     guard !installingIce else { return }
     installingIce = true
     defer { installingIce = false }
@@ -286,7 +303,7 @@ final class SettingsStore {
     saveTask = nil
     await waitUntilSavingIsSafe()
     let written = writeChanges()
-    let installed = await iceInstaller.run(offline: offline, backupDir: RimePaths.backupDir.appending(component: Self.stamp()))
+    let installed = await iceInstaller.run(from: source, backupDir: RimePaths.backupDir.appending(component: Self.stamp()))
     ConfigFile.pruneFolderBackups(keeping: 3)
     ConfigFile.pruneBackups(keeping: 20)
     reloadChangedFiles()
@@ -304,8 +321,10 @@ final class SettingsStore {
       iceInstaller.summary = "已安装雾凇拼音\(version)"
     } else if let before, let after = iceVersion, before != after {
       iceInstaller.summary = "已更新雾凇拼音：\(before) → \(after)"
-    } else {
+    } else if source == .download {
       iceInstaller.summary = "已更新到最新发布版\(version)"
+    } else {
+      iceInstaller.summary = "已重新安装\(version)"
     }
     await deployNow(timeout: 120)
   }

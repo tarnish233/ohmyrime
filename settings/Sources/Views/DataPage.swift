@@ -10,8 +10,10 @@ import UniformTypeIdentifiers
 
 struct DataPage: View {
   @Environment(SettingsStore.self) private var store
+  @Environment(InstallState.self) private var install
   @State private var dictionaries = UserDictionary.all()
   @State private var backupMessage: String?
+  @State private var confirmsUninstall = false
 
   var body: some View {
     Form {
@@ -92,9 +94,52 @@ struct DataPage: View {
           Spacer()
         }
       }
+
+      Section {
+        HStack {
+          Text("卸载 ohmyrime")
+          Spacer()
+          if install.uninstaller.isRunning {
+            ProgressView().controlSize(.small)
+            Text(install.uninstaller.steps.last ?? "正在卸载…").foregroundStyle(.secondary)
+          } else {
+            Button("卸载…") { confirmsUninstall = true }
+              .disabled(Payload.uninstallScript == nil)
+          }
+        }
+        if let failure = install.uninstaller.failure {
+          Text(failure).font(.callout).foregroundStyle(.red).textSelection(.enabled)
+        }
+      } header: {
+        Text("卸载")
+      } footer: {
+        Note("从输入法里移除鼠须管，删除鼠须管和这个 App，会弹一次管理员密码框。配置和用户词库默认保留，以后再装还能接着用。")
+      }
     }
     .formStyle(.grouped)
+    .confirmationDialog("卸载 ohmyrime？", isPresented: $confirmsUninstall) {
+      Button("卸载，保留配置和词库") { uninstall(purge: false) }
+      Button("卸载，并删除配置和词库", role: .destructive) { uninstall(purge: true) }
+      Button("取消", role: .cancel) {}
+    } message: {
+      Text("卸载后系统会换成别的输入法。删除配置和词库会一并删掉 ~/Library/Rime 和改设置前的备份，删了就找不回来。")
+    }
     .onAppear { dictionaries = UserDictionary.all() }
+  }
+
+  /// Uninstalls with the bundled uninstall.sh, then quits: the app is gone.
+  private func uninstall(purge: Bool) {
+    Task {
+      // Changes still waiting to be saved would come back into a deleted folder.
+      if purge {
+        store.discardUnsavedChanges()
+      } else if store.hasUnsavedChanges {
+        store.saveNow(immediately: true)
+      }
+      if await install.uninstall(purge: purge) {
+        NSApp.terminate(nil)
+      }
+    }
   }
 
   private func description(of dictionary: String) -> String {
