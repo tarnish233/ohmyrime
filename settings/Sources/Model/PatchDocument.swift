@@ -125,6 +125,48 @@ struct PatchDocument: Equatable {
     try removeAll { $0 == key }
   }
 
+  /// Adds a line to a block map entry, for a member librime cannot read back through its path
+  /// API (the punctuator's "/" key): the entry is created if it is not there.
+  mutating func addMemberLine(to key: String, _ line: String) throws {
+    try prepareBlock()
+    guard let block = try block() else { return }
+    if let entry = try entries().first(where: { $0.key == key }) {
+      let memberIndent = block.indent + 2
+      let text = String(repeating: " ", count: memberIndent) + line
+      // After the entry's last line.
+      var insertion = entry.range.lowerBound + 1
+      for index in entry.range where !lines[index].allSatisfy({ $0 == " " || $0 == "\t" }) {
+        insertion = index + 1
+      }
+      lines.insert(text, at: insertion)
+    } else {
+      let rendered = Self.render(keyText: YAMLNode.quoted(key), value: .map([]), indent: block.indent, comment: nil)
+      _ = rendered
+      var insertion = block.range.lowerBound
+      for index in block.range where !lines[index].allSatisfy({ $0 == " " || $0 == "\t" }) {
+        insertion = index + 1
+      }
+      let memberIndent = block.indent + 2
+      lines.insert(contentsOf: [String(repeating: " ", count: block.indent) + key + ":",
+                                String(repeating: " ", count: memberIndent) + line], at: insertion)
+    }
+  }
+
+  /// Removes the lines of a block map entry that match, and the entry itself when nothing else is
+  /// left in it.
+  mutating func removeMemberLines(of key: String, where matches: (String) -> Bool) throws {
+    guard let entry = try entries().first(where: { $0.key == key }) else { return }
+    let members = entry.range.dropFirst().filter { !lines[$0].allSatisfy({ $0 == " " || $0 == "\t" }) }
+    let keep = members.filter { !matches(lines[$0]) }
+    if keep.isEmpty {
+      lines.removeSubrange(entry.range)
+      return
+    }
+    for index in members.reversed() where matches(lines[index]) {
+      lines.remove(at: index)
+    }
+  }
+
   /// Removes the entries whose keys match, such as all of one app's options.
   mutating func removeAll(where matches: (String) -> Bool) throws {
     for entry in try entries().reversed() where matches(entry.key) {

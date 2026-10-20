@@ -31,7 +31,7 @@ done
 [ $status -eq 0 ] || exit $status
 
 echo "== 用 librime 部署改过的副本"
-out=$(bash scripts/rime-smoke.sh "$work/Rime" nihao zi "nihao," "nihao." cshi 2>&1)
+out=$(bash scripts/rime-smoke.sh "$work/Rime" nihao zi "nihao," "nihao." cshi / 2>&1)
 echo "$out" | grep -E "=>|错误|schema:"
 fail=0
 expect() {
@@ -42,6 +42,7 @@ expect "^zi +=> .*(只|知|之|支)" "模糊音 z ↔ zh：zi 也出 zhi 的字"
 expect "^nihao, +=> 1\." "逗号翻页：第一页时 , 不上屏标点"
 expect "^nihao\. +=> page 2:" "句号翻页：. 到第 2 页"
 expect "^cshi +=> 1\.测试短语" "自定义短语"
+expect "^/ +=> commit「、」" "中文标点下 / 打成「、」（设置里打开的）"
 expect "librime 错误日志：0 条" "部署没有错误"
 
 # 模型测试里离线装好雾凇拼音的文件夹（没有 .cache/rime-ice/full.zip 时跳过）

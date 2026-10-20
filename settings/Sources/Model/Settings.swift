@@ -295,6 +295,46 @@ extension SettingsStore {
   }
 }
 
+// MARK: - 标点
+
+extension SettingsStore {
+  /// Rime's merge path: `punctuator/half_shape/+` adds to the map rime-ice defines, leaving its
+  /// other punctuation alone (naming the `/` key directly needs quoting Rime does not read).
+  static let halfShapeMerge = "punctuator/half_shape/+"
+
+  /// 中文标点下 / 打成「、」，像微信输入法那样。
+  ///
+  /// librime reads a config *path* segment by segment (`/` separates them), so it cannot read a
+  /// map entry keyed "/" back — only list it. Hence the patch's own lines are the source of truth
+  /// here, both ways: `punctuator/half_shape/+` with a `'/': '、'` member.
+  var slashIsIdea: Bool {
+    guard let entry = defaults.document.entry(Self.halfShapeMerge) else { return false }
+    return defaults.document.lines[entry.range].contains { Self.isIdeaLine($0) }
+  }
+
+  func setSlashIsIdea(_ on: Bool) {
+    do {
+      if on {
+        guard !slashIsIdea else { return }
+        try defaults.editDocument { try $0.addMemberLine(to: Self.halfShapeMerge, "'/': '、'") }
+      } else {
+        // Only our line goes: the merge entry may hold the user's own additions too.
+        try defaults.editDocument { try $0.removeMemberLines(of: Self.halfShapeMerge, where: Self.isIdeaLine) }
+      }
+    } catch {
+      defaults.reportProblem(error.localizedDescription)
+    }
+    changed()
+  }
+
+  /// A line of the merge entry that maps "/" to 、 ("'/': '、'", "/: '、'", "\"/\": '、'").
+  nonisolated static func isIdeaLine(_ line: String) -> Bool {
+    let text = line.trimmingCharacters(in: .whitespaces)
+    let keyed = text.hasPrefix("/") || text.hasPrefix("'/\'") || text.hasPrefix("\"/\"")
+    return keyed && text.contains("、")
+  }
+}
+
 // MARK: - rime-ice
 
 struct SchemaSwitch: Identifiable, Hashable {

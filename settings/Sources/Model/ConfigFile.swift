@@ -147,6 +147,18 @@ final class ConfigFile {
   /// Sets a value. A new entry is added only when Rime would not read that value anyway, and goes
   /// again when it comes back to it; entries that were in the file stay. nil removes the entry
   /// (back to the default).
+  /// Why the last direct edit failed, for the page to show.
+  func reportProblem(_ text: String) {
+    problem = text
+  }
+
+  /// Edits the patch document's text directly, for entries librime cannot read back (a map keyed
+  /// by "/"), then forgets the cached effective config.
+  func editDocument(_ body: (inout PatchDocument) throws -> Void) rethrows {
+    try body(&document)
+    effectiveCache = nil
+  }
+
   func set(_ path: String, _ value: YAMLNode?) {
     guard problem == nil else { return }
     var without = document

@@ -158,7 +158,8 @@ struct Snapshot {
     }
     var failures = 0
     NSApp.appearance = NSAppearance(named: .aqua)
-    for page in Page.allCases {
+    // The README's table has the six setting pages; 关于 is captured with the others for a look.
+    for page in Page.allCases where page != .about {
       state.page = page
       state.previewExpanded = false
       try? await Task.sleep(for: .seconds(1.2))

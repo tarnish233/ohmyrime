@@ -170,6 +170,10 @@ extension YAMLNode {
     if ["~", "null"].contains(text.lowercased()) {
       return false
     }
+    // librime reads keys as paths: a bare "/" (the punctuator's key) would be a path, not a key.
+    if text.hasPrefix("/") || text.hasPrefix("@") {
+      return false
+    }
     let inner = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_-./+()^$=<>?%"))
     guard text.unicodeScalars.allSatisfy({ inner.contains($0) }), let first = text.unicodeScalars.first else { return false }
     return !CharacterSet(charactersIn: "-?%<>=").contains(first)

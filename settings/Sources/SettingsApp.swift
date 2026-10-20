@@ -114,6 +114,7 @@ struct SettingsApp: App {
         .environment(store)
         .environment(state)
         .environment(install)
+        .environment(UpdateCenter.shared)
         .frame(minWidth: 780, minHeight: 560)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
           store.reloadChangedFiles()
@@ -126,10 +127,34 @@ struct SettingsApp: App {
           window.center()
         }
         .task {
+          // Once a day, quietly; the banner in the settings says when there is something.
+          Task { await UpdateCenter.shared.checkIfDue() }
           if let folder = LaunchOptions.current.snapshotDir {
             await Snapshot(store: store, state: state, install: install, folder: folder).run()
           } else if let test = ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_SELFTEST"] {
-            if test == "deploy" {
+            if test == "update-install" {
+              // Installs the app in OHMYRIME_UPDATE_SOURCE over the copy running here, as the
+              // About page would install a release.
+              let source = ProcessInfo.processInfo.environment["OHMYRIME_UPDATE_SOURCE"]
+              if let source {
+                UpdateCheck.assetBaseURL = URL(fileURLWithPath: source, isDirectory: true)
+              }
+              var version = Payload.version
+              if let forced = ProcessInfo.processInfo.environment["OHMYRIME_UPDATE_VERSION"] {
+                version = forced
+              }
+              let release = UpdateCheck.Release(version: "v\(version)",
+                                                pageURL: URL(string: "https://example.invalid")!)
+              UpdateCenter.shared.show(.available(release))
+              await UpdateCenter.shared.installRelease()
+              print(UpdateCenter.shared.installFailure ?? "installed")
+              exit(UpdateCenter.shared.installFailure == nil ? 0 : 1)
+            } else if test == "update" {
+              // Checks GitHub as the About window does, and says what came of it.
+              let outcome = await UpdateCheck.check(currentVersion: Payload.version)
+              print(outcome)
+              exit(0)
+            } else if test == "deploy" {
               await DeploySelfTest(store: store).run()
             } else if let mode = IceInstallSelfTest.Mode(rawValue: test) {
               await IceInstallSelfTest(store: store, mode: mode).run()
@@ -140,7 +165,15 @@ struct SettingsApp: App {
     .defaultSize(width: 880, height: 720)
     .windowResizability(.contentMinSize)
     .commands {
+      CommandGroup(replacing: .appInfo) {
+        Button("关于 ohmyrime") { showAbout() }
+      }
       CommandGroup(after: .appInfo) {
+        Button("检查更新…") {
+          showAbout()
+          Task { await UpdateCenter.shared.check() }
+        }
+        Divider()
         Button("欢迎使用 ohmyrime…") { state.showWelcome(install) }
           .disabled(state.welcome != nil)
       }
@@ -150,6 +183,17 @@ struct SettingsApp: App {
           .keyboardShortcut("s")
       }
     }
+  }
+}
+
+extension SettingsApp {
+  /// 「关于」in the app menu: the About page of the settings window, brought forward.
+  @MainActor
+  private func showAbout() {
+    state.page = .about
+    state.welcome = nil
+    NSApp.activate(ignoringOtherApps: true)
+    NSApp.windows.first { $0.canBecomeMain }?.makeKeyAndOrderFront(nil)
   }
 }
 

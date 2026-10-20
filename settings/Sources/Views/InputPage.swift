@@ -23,6 +23,7 @@ struct InputPage: View {
       } footer: {
         Note("卷轴模式下也是每行的个数。")
       }
+      punctuationSection
       switchSection
       pagingSection
       Section {
@@ -146,6 +147,16 @@ struct InputPage: View {
     guard let index = ids.firstIndex(of: id), ids.indices.contains(index + offset) else { return }
     ids.swapAt(index, index + offset)
     store.setEnabledSchemas(ids)
+  }
+
+  private var punctuationSection: some View {
+    Section {
+      Toggle("中文标点下 / 打成「、」", isOn: Binding(get: { store.slashIsIdea }, set: { store.setSlashIsIdea($0) }))
+    } header: {
+      Text("标点")
+    } footer: {
+      Note("打开后，中文标点状态下按 / 直接上屏顿号「、」，英文标点状态还是 /。微信输入法也是这样。")
+    }
   }
 
   // MARK: Keys

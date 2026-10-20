@@ -8,7 +8,7 @@
 import SwiftUI
 
 enum Page: String, CaseIterable, Identifiable {
-  case appearance, input, ice, apps, phrases, data
+  case appearance, input, ice, apps, phrases, data, about
   var id: String { rawValue }
 
   var title: String {
@@ -19,6 +19,7 @@ enum Page: String, CaseIterable, Identifiable {
     case .apps: "应用"
     case .phrases: "短语"
     case .data: "词库与部署"
+    case .about: "关于"
     }
   }
 
@@ -30,6 +31,7 @@ enum Page: String, CaseIterable, Identifiable {
     case .apps: "square.grid.2x2.fill"
     case .phrases: "text.bubble.fill"
     case .data: "books.vertical.fill"
+    case .about: "info.circle.fill"
     }
   }
 
@@ -41,6 +43,7 @@ enum Page: String, CaseIterable, Identifiable {
     case .apps: .purple
     case .phrases: .orange
     case .data: .brown
+    case .about: .gray
     }
   }
 }
@@ -74,6 +77,7 @@ struct ContentView: View {
       .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
     } detail: {
       VStack(spacing: 0) {
+        UpdateBanner()
         InstallBanner()
         if !store.problems.isEmpty || store.saveError != nil {
           ProblemBanner(messages: store.problems + [store.saveError].compactMap { $0 })
@@ -101,6 +105,7 @@ struct ContentView: View {
     case .apps: AppsPage()
     case .phrases: PhrasesPage()
     case .data: DataPage()
+    case .about: AboutPage()
     }
   }
 }
@@ -119,6 +124,26 @@ struct ProblemBanner: View {
     }
     .padding(10)
     .background(.orange.opacity(0.12))
+  }
+}
+
+/// A newer ohmyrime is published: the banner goes to the About page, which installs it.
+struct UpdateBanner: View {
+  @Environment(UpdateCenter.self) private var updates
+  @Environment(AppState.self) private var state
+
+  var body: some View {
+    if let release = updates.release, updates.installFailure == nil, case UpdateCenter.Install.idle = updates.install {
+      HStack(spacing: 8) {
+        Image(systemName: "arrow.down.circle.fill").foregroundStyle(.blue)
+        Text("ohmyrime \(release.shortVersion) 发布了，现在装的是 \(Payload.version)。").font(.callout)
+        Spacer()
+        Button("查看") { state.page = .about }
+      }
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .background(.blue.opacity(0.1))
+    }
   }
 }
 

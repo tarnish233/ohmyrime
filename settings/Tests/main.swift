@@ -156,6 +156,24 @@ MainActor.assumeIsolated {
   store.setSwitchDefault("traditionalization", 0)
   check(!store.schema("rime_ice").isPatched("switches/@2/reset"), "off for a switch without reset keeps the schema's behavior")
 
+  // 中文标点下 / 打成「、」：写进 punctuator/half_shape/+，只加这一项，不动别的标点
+  check(!store.slashIsIdea, "默认 / 还是 /")
+  store.setSlashIsIdea(true)
+  let mergeText = store.defaults.document.text
+  check(store.slashIsIdea && mergeText.contains("punctuator/half_shape/+:") && mergeText.contains("'/': '、'"),
+        "打开后写入 punctuator/half_shape/+ 的 '/': '、'", String(mergeText.suffix(80)))
+  store.setSlashIsIdea(false)
+  check(!store.slashIsIdea && store.defaults.document.entry("punctuator/half_shape/+") == nil,
+        "关掉后整项删掉，没留下空映射")
+  store.setSlashIsIdea(true)
+  // 用户自己写在同一个合并项里的别的标点要留着
+  store.defaults.editDocument { try? $0.addMemberLine(to: "punctuator/half_shape/+", "'|': '｜'") }
+  store.setSlashIsIdea(false)
+  let kept = store.defaults.document.text
+  check(!store.slashIsIdea && kept.contains("'|': '｜'") && !store.defaults.document.text.contains("'/'"),
+        "删掉 / 那一行，用户自己的 | 留着", String(kept.suffix(60)))
+  store.setSlashIsIdea(true)
+
   // 用户可能把以词定字设成「不使用」，所以先记下当前值再换回去
   let selectKeys = store.selectCharacterKeys
   store.setSelectCharacterKeys(.commaPeriod)
@@ -328,6 +346,33 @@ MainActor.assumeIsolated {
         "\(runner.steps) \(runner.log)")
   check(runner.failure == "no line end", "fails with its exit status, says why", runner.failure ?? "nil")
 }
+
+// MARK: - Update check
+
+print("== update check")
+check(UpdateCheck.isNewer("v0.10.0", than: "0.9.9") == true, "0.10.0 比 0.9.9 新（按数字比，不按字符串）")
+check(UpdateCheck.isNewer("0.2.0", than: "v0.2.0") == false, "补上 v 之后一样新")
+check(UpdateCheck.isNewer("0.2.0-beta.3", than: "0.2.0") == false, "1.2.0-beta 和 1.2.0 一样")
+check(UpdateCheck.isNewer("0.1.9", than: "0.2") == false, "0.1.9 比 0.2 旧")
+check(UpdateCheck.isNewer("abc", than: "0.2.0") == nil, "读不出来的版本号返回 nil")
+check(UpdateCheck.versionsMatch("0.2", "0.2.0") && !UpdateCheck.versionsMatch("0.2.1", "0.2.0"), "0.2 和 0.2.0 是同一版")
+check(UpdateCheck.stripPrefix(" v0.2.0 ") == "0.2.0", "去掉 v 和空格")
+let redirected = URL(string: "https://github.com/tarnish233/ohmyrime/releases/tag/v0.2.0")!
+let release = UpdateCheck.release(fromRedirect: redirected)
+check(release?.version == "v0.2.0" && release?.shortVersion == "0.2.0", "从最新发布的重定向里读出 v0.2.0")
+check(UpdateCheck.release(fromRedirect: URL(string: "https://github.com/someone/else/releases/tag/v9.9.9")!) == nil,
+      "别的仓库的重定向不认")
+check(UpdateCheck.release(fromRedirect: URL(string: "http://github.com/tarnish233/ohmyrime/releases/tag/v0.3.0")!) == nil,
+      "不是 https 的不认")
+check(UpdateCheck.release(fromRedirect: URL(string: "https://github.com/tarnish233/ohmyrime/releases/tag/nightly")!) == nil,
+      "不是版本号的标签不认")
+check(UpdateCheck.assetURL("ohmyrime.zip")?.absoluteString == "https://github.com/tarnish233/ohmyrime/releases/latest/download/ohmyrime.zip",
+      "发布包地址用 latest/download，文件名不带版本号")
+check(UpdateCheck.parseChecksum("711658b5a0b7414b92bf4e720b59a42e02900b5fb65a4c2641a9589c36434fba  ohmyrime.zip\n")
+        == "711658b5a0b7414b92bf4e720b59a42e02900b5fb65a4c2641a9589c36434fba", "读 shasum 的输出")
+check(UpdateCheck.parseChecksum("不是校验值") == nil, "不是校验值就不认")
+check(UpdateCheck.describe(URLError(.notConnectedToInternet)) == "没有网络"
+        && UpdateCheck.describe(URLError(.timedOut)) == "连接 GitHub 超时", "网络错误的说明")
 
 print("")
 print(failures == 0 ? "ALL CHECKS PASSED" : "\(failures) CHECK(S) FAILED")

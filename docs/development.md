@@ -201,11 +201,12 @@ patch:
 | 页面 | 能设置的 | 写到 |
 |---|---|---|
 | 外观 | 液态玻璃 / 系统配色 / 预设配色，玻璃质感，一行或一列、横排或竖排，卷轴模式（行数、Tab 翻页、列宽），字体和字号、选中项字重，候选格式，圆角、留白、间距、行距，动效，菜单栏图标，部署通知；顶部是实时预览 | `squirrel.custom.yaml` |
-| 输入 | 启用哪些方案和顺序（找不到方案文件的标「未安装」），每页候选数，左右 Shift / Control / Caps Lock 怎样切换中英，翻页键（`-` `=` / `,` `.` / `[` `]` / Tab），以词定字，方案选单快捷键 | `default.custom.yaml` |
+| 输入 | 启用哪些方案和顺序（找不到方案文件的标「未安装」），每页候选数，中文标点下 `/` 打成「、」，左右 Shift / Control / Caps Lock 怎样切换中英，翻页键（`-` `=` / `,` `.` / `[` `]` / Tab），以词定字，方案选单快捷键 | `default.custom.yaml` |
 | 雾凇拼音 | 安装或更新雾凇拼音；新输入框的默认状态（中英、标点、简繁、Emoji、全角、单字优先），模糊音（z/zh、n/l、an/ang 等 10 组） | `rime_ice.custom.yaml`，启用的双拼方案也一起改 |
 | 应用 | 按应用设置默认英文、不内嵌编码、Vim 模式；可以添加、移除应用 | `squirrel.custom.yaml` 的 `app_options` |
 | 短语 | 自定义短语表格：短语、编码、权重，可以搜索 | `custom_phrase.txt` |
-| 词库与部署 | 用户词库大小，同步文件夹（可以设到 iCloud 云盘）、立即同步、备份用户文件夹，部署状态和错误日志 | `installation.yaml` 的 `sync_dir` |
+| 词库与部署 | 用户词库大小，同步文件夹（可以设到 iCloud 云盘）、立即同步、备份用户文件夹，部署状态和错误日志；卸载 ohmyrime | `installation.yaml` 的 `sync_dir` |
+| 关于 | 版本、检查更新并下载安装、已装的鼠须管和雾凇拼音版本、项目链接 | App 自己的偏好设置（上次检查更新的时间） |
 
 预览：顶部的候选框是鼠须管自己的候选框代码画的（`squirrel/sources` 编进了设置 App）。它用窗口里当前的设置，没保存的也算，所以和实际打字时一样，包括玻璃、字体和动效。
 
@@ -237,6 +238,13 @@ patch:
 | 菜单 | 「设置…」按 bundle ID `im.rime.ohmyrime.settings` 打开设置 App，没装时打开用户文件夹 |
 | 预览 | `SquirrelConfig.open(yaml:)` 从 YAML 文本读入配置 |
 
+### 中文标点下 / 打成「、」
+
+- 写进 `default.custom.yaml` 的 `punctuator/half_shape/+`，只加 `'/': '、'` 这一项：`+` 是 Rime 的合并写法，rime-ice 原来的标点和其他改动都不动。
+- 不能按普通路径写：librime 用 `/` 分隔路径，键名是 `/` 的这一项读不回来（连 `config_get_cstring` 都取不到，只能枚举）。
+  - 所以这一项以补丁文件的原文为准：`SettingsStore.isIdeaLine` 认 `'/': '、'` 这样的行，开关状态、增删都基于行文本（`PatchDocument.addMemberLine` / `removeMemberLines`）。
+  - 用户自己在同一个合并项里加的标点会保留，关掉时只删 `/` 那一行。
+
 ### 安装雾凇拼音
 
 - 没装雾凇拼音时，「雾凇拼音」页的按钮用 App 自带的那一份（`Payload/rime-ice.zip`），不用联网，几乎瞬间装好。装好后同一个位置变成「更新到最新版」，那才下载。
@@ -245,6 +253,23 @@ patch:
 - 下载不带自己的代理：curl 照用户环境里的 `https_proxy` 之类设置走，脚本不设置也不读取别的代理。
 - 下载缓存在 `~/Library/Caches/im.rime.ohmyrime.settings`。整个用户文件夹的备份每份约 16 MB，只保留最近 3 份。
 
+### 检查更新
+
+- 「关于」页和菜单里的「检查更新…」查 GitHub 的最新发布。逻辑照 `workspace/OpenMouse` 的做法：
+  - 对 `https://github.com/<仓库>/releases/latest` 发 HEAD 请求，GitHub 会 302 到 `/releases/tag/v0.2.0`，从落地 URL 里取版本号。不走 REST API，就不会被匿名 IP 的限流卡住。
+  - 版本按点分数字比较（`1.10.0` 比 `1.9.9` 新），`v` 前缀和 `-beta` 之类的后缀不影响。
+  - 落地 URL 必须是本仓库的 `https://github.com/…/releases/tag/…`，别的地址一律不认，防止代理或别的跳转变成「更新」。
+- 启动后每天自动查一次（上次检查时间存在 App 的偏好设置里），失败不打扰；手动检查才显示失败原因。
+- 有新版时：「关于」页显示版本对比，「设置」页顶部出现蓝色提示条。
+- 「下载并安装」依次做：
+  1. 下载 `releases/latest/download/ohmyrime.zip`（约 30 MB）；
+  2. 下载同目录的 `.sha256`，比对下载文件的 SHA-256，不一致就不装；
+  3. `ditto -x -k` 解压，比对解压出来的 App 版本号和发布版本；
+  4. `codesign --verify --deep --strict`：Apple 芯片只跑有签名的代码，签名不对就不装；
+  5. 在同一个文件夹里先把旧 App 改名让开，再把新的换进去，失败就换回来；
+  6. 启动新的 App，旧的退出。
+- 测这些：`SQUIRREL_SETTINGS_SELFTEST=update` 用真实网络查一次并打印结果；`SQUIRREL_SETTINGS_SELFTEST=update-install` 配 `OHMYRIME_UPDATE_SOURCE=<放了 zip 和 .sha256 的目录>`，在 App 的一份副本上走完下载、校验、解压、验签、替换，用来验证失败路径（改坏的校验值、对不上的版本、破坏的签名）。
+
 ### 测试
 
 | 命令 | 检查什么 |
@@ -252,6 +277,8 @@ patch:
 | `scripts/test-install.sh` | 安装、重装、卸载、`--purge`、`--no-rime-ice`、以及「App 里那一份」的 `install.sh`，都在 `build/install-test` 的假目录里做：不碰 `/Library/Input Methods`，不弹密码框，不动 `~/Library/Rime` |
 | `scripts/test-settings.sh` | 在 `~/Library/Rime` 的副本上跑模型测试（YAML 往返、逐行编辑、各页设置），再用 librime 部署这份副本，打字确认改动生效。还会用 `.cache/rime-ice/full.zip` 往空文件夹离线装一遍雾凇拼音。不碰真正的配置 |
 | `SQUIRREL_SETTINGS_SELFTEST=deploy …/SquirrelSettings` | 对正在用的鼠须管，把外观和每页候选数各改一个来回，确认外观改动只重新载入、Rime 日志里没有重启，文件最后恢复原样。要等 31 秒，glog 才把日志写出来 |
+| `SQUIRREL_SETTINGS_SELFTEST=update` | 用真实网络查一次 GitHub 的最新发布，打印结果（`upToDate` / `available` / `failed`） |
+| `SQUIRREL_SETTINGS_SELFTEST=update-install` | 配 `OHMYRIME_UPDATE_SOURCE=<目录>`（里面放 `ohmyrime.zip` 和 `.sha256`），在 App 的副本上走完下载、校验、验签、替换；用来验证失败路径 |
 | `SQUIRREL_SETTINGS_SELFTEST=install-ice`（或 `-offline`、`-cancel`） | 配合 `SQUIRREL_SETTINGS_USER_DIR=<副本>`，按页面上的按钮那样装雾凇拼音：下载、离线安装、中途取消 |
 | `SQUIRREL_SETTINGS_SNAPSHOT=<目录>` | 配合 `SQUIRREL_SETTINGS_USER_DIR=<副本>` 和 `SQUIRREL_SETTINGS_NO_DEPLOY=1`，截取每页的浅色、深色截图。只截这个 App 自己的窗口；`SQUIRREL_SETTINGS_SNAPSHOT_PAGES=input,ice` 只截部分页面；`welcome` 只截欢迎页的四步和浮在系统设置上的提示卡 |
 | `scripts/readme-shots.sh` | 重新生成 `docs/images/settings-*.png` 和 `install-*.png`（欢迎页）。用干净的用户文件夹（配置模板加离线安装的雾凇拼音），截图里没有个人数据；截图时窗口会切到最前面约 15 秒 |
