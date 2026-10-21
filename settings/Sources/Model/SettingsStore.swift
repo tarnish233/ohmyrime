@@ -104,10 +104,20 @@ final class SettingsStore {
     diagnose("changed")
   }
 
-  /// SQUIRREL_SETTINGS_DIAG=<file>: append the state that matters for saving, to find out why the
-  /// toolbar says 「保存中」 forever. Only when the environment variable is set.
+  /// Tells the views that the state changed, without scheduling another save: after a save, the
+  /// files are no longer dirty, and the toolbar has to show that. Without this, the views would
+  /// keep the 「保存中…」 they drew when the change was made — the settings were saved and in
+  /// effect, but the toolbar went on spinning.
+  private func stateChanged() {
+    revision += 1
+  }
+
+  /// The state that matters for saving, appended to a log: to find out why the toolbar says
+  /// 「保存中」 forever. It always goes to the app's support folder; SQUIRREL_SETTINGS_DIAG=<file>
+  /// changes where, and turns the copy in the system log on.
   private func diagnose(_ what: String) {
-    guard let path = ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_DIAG"] else { return }
+    let path = ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_DIAG"]
+      ?? RimePaths.supportDir.appending(component: "diagnostics.log").path
     let dirty = allFiles.filter(\.isDirty).map { $0.fileName }
     let problems = allFiles.compactMap { $0.problem }
     var line = "\(Date().formatted(date: .omitted, time: .standard)) \(what)"
@@ -119,13 +129,21 @@ final class SettingsStore {
     line += " err=\(saveError ?? "-")"
     if !problems.isEmpty { line += " problem=\(problems.joined(separator: ";"))" }
     line += "\n"
-    NSLog("OHMYRIME-DIAG %@", line)
+    if ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_DIAG"] != nil {
+      NSLog("OHMYRIME-DIAG %@", line)
+    }
+    let url = URL(fileURLWithPath: path)
+    try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     if let handle = FileHandle(forWritingAtPath: path) {
       handle.seekToEndOfFile()
       handle.write(Data(line.utf8))
       try? handle.close()
     } else {
-      try? Data(line.utf8).write(to: URL(fileURLWithPath: path))
+      try? Data(line.utf8).write(to: url)
+    }
+    // Keep it small: the last few hundred lines are enough to see what happened.
+    if let text = try? String(contentsOf: url, encoding: .utf8), text.count > 200_000 {
+      try? Data(text.suffix(100_000).utf8).write(to: url)
     }
   }
 
@@ -181,6 +199,7 @@ final class SettingsStore {
       guard let self, self.hasUnsavedChanges else { return }
       self.diagnose("兜底：十秒后还没存上，直接写盘")
       let saved = self.writeChanges()
+      self.stateChanged()
       if !saved.isEmpty && self.deploysAfterSaving {
         self.deployer.deploy(saved: saved, styleOnly: false)
       }
@@ -208,6 +227,9 @@ final class SettingsStore {
     }
     let lookOnly = onlyLookChanged
     let saved = writeChanges()
+    // The files are on disk now: the views have to hear it, or the toolbar keeps saying
+    // 「保存中…」 (see stateChanged).
+    stateChanged()
     diagnose("saveNow(wrote \(saved.count))")
     if !saved.isEmpty && deploysAfterSaving {
       deployer.deploy(saved: saved, styleOnly: lookOnly && saved == [squirrel.customURL])
@@ -270,6 +292,7 @@ final class SettingsStore {
     saveTask = nil
     await waitUntilSavingIsSafe()
     let saved = writeChanges()
+    stateChanged()
     if deploysAfterSaving {
       deployer.deploy(saved: saved, timeout: timeout)
     }
@@ -286,6 +309,15 @@ final class SettingsStore {
   var incompletePhrases: Int {
     _ = revision
     return phrases.phrases.filter { $0.problem != nil }.count
+  }
+
+  /// Which files are not on disk yet, for the toolbar's explanation.
+  var unsavedFileNames: [String] {
+    _ = revision
+    var names = allFiles.filter(\.isDirty).map(\.fileName)
+    if phrases.isDirty { names.append("custom_phrase.txt") }
+    if installation.isDirty { names.append("installation.yaml") }
+    return names
   }
 
   /// Drops the changes not saved yet: uninstalling deletes the user folder, and saving them when

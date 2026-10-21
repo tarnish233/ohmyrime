@@ -241,9 +241,13 @@ patch:
 - 保存本身也怕挂起：`scheduleSave` 和「等上一次部署结束再存」的循环都加了
   `ProcessInfo.beginActivity`，不然 App 退到后台被系统挂起时，Task 不恢复，文件就一直不写盘，
   工具栏也就一直显示「保存中…」。另外每 60 秒有一道兜底：改动还没落盘就再存一次。
-- 排查用的日志：把 `SQUIRREL_SETTINGS_DIAG=<文件>` 设成环境变量再启动 App，它会把每次改动、
-  每次保存的细节（哪个文件脏、部署到哪一步了、等待多久）写进那个文件。系统日志里也有
-  `OHMYRIME-DIAG` 前缀的同一行。
+- 排查用的日志：每次改动和保存的细节（哪个文件脏、部署到哪一步了、等待多久）都会写进
+  `~/Library/Application Support/鼠须管设置/diagnostics.log`（自动保留最近的大小）。
+  `SQUIRREL_SETTINGS_DIAG=<文件>` 可以换个地方写，同时把同样的内容也写进系统日志
+  （`OHMYRIME-DIAG` 前缀）。
+- 工具栏的「保存中…」靠 `SettingsStore.revision` 触发刷新，而 `revision` 只有 `changed()`
+  才加。**保存本身也要加**：文件写出去之后要告诉界面一声，不然界面还停在改动那一刻画的
+  「保存中…」，设置明明已经生效了，转圈却停不下来（`stateChanged()`）。
 
 和鼠须管之间的接口（`squirrel/` 分支 `ohmyrime`）：
 

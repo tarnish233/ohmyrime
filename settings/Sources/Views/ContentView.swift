@@ -328,6 +328,18 @@ struct DeployDetails: View {
     if store.deployer.isSlow {
       return "改动已经写进 ~/Library/Rime，但鼠须管还没回话。装新方案时第一次部署要十几秒，属正常；再等一会儿还不动，就点「重新部署」再问一次（不会丢改动）。"
     }
+    if store.hasUnsavedChanges {
+      // Say what is not on disk: a file that cannot be written (permissions, a YAML error) shows
+      // up here, and so does a save that is still waiting for something.
+      let names = store.unsavedFileNames
+      var text = "还没写到磁盘上的是：\(names.joined(separator: "、"))。"
+      if let error = store.saveError {
+        text += "写的时候出了错：\(error)"
+      } else {
+        text += "十秒内会再试一次；还是不行的话，把「鼠须管设置」里的 diagnostics.log 发给作者。"
+      }
+      return text
+    }
     switch store.deployer.state {
     case .failed: return "Rime 没能读懂改过的配置，下面是日志里的错误。可以改回刚才的设置，或打开日志查看。"
     case .noAnswer: return "改动已写进 ~/Library/Rime，但没收到鼠须管部署完成的消息：鼠须管可能没在运行，或者还是旧版本。在菜单栏输入法菜单里选一次鼠须管，或点「重新部署」。"

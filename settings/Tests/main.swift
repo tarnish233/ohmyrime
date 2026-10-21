@@ -219,6 +219,16 @@ MainActor.assumeIsolated {
   store.changed()
   check(store.incompletePhrases == 0, "removing it clears the block")
 
+  // The toolbar shows whether the changes are on disk. That depends on the views being told
+  // about it: hasUnsavedChanges reads `revision`, which only changed() bumps — a save that
+  // writes the files out has to bump it too, or the toolbar keeps saying 「保存中…」.
+  let revisionBefore = store.revision
+  store.set(store.squirrel, "style/glass_style", .scalar("clear"))
+  check(store.revision > revisionBefore && store.hasUnsavedChanges, "a change marks the store dirty")
+  store.saveNow()
+  check(!store.hasUnsavedChanges, "saving writes the files out")
+  check(store.revision > revisionBefore + 1, "and tells the views about it", "rev=\(store.revision)")
+
   let phraseCount = store.phrases.phrases.count
   store.phrases.add(Phrase(text: "测试短语", code: "cshi", weight: "100"))
   store.setSyncDir(sandbox.appending(component: "sync-test").path)
