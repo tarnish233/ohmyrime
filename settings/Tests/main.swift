@@ -156,7 +156,9 @@ MainActor.assumeIsolated {
   store.setSwitchDefault("traditionalization", 0)
   check(!store.schema("rime_ice").isPatched("switches/@2/reset"), "off for a switch without reset keeps the schema's behavior")
 
-  // 中文标点下 / 打成「、」：写进 punctuator/half_shape/+，只加这一项，不动别的标点
+  // 中文标点下 / 打成「、」：写进 punctuator/half_shape/+，只加这一项，不动别的标点。
+  // 真机的 ~/Library/Rime 可能已经打开过，先关掉，从一个确定的起点开始测
+  store.setSlashIsIdea(false)
   check(!store.slashIsIdea, "默认 / 还是 /")
   store.setSlashIsIdea(true)
   let mergeText = store.defaults.document.text
@@ -191,6 +193,15 @@ MainActor.assumeIsolated {
   check(store.apps.count == appsBefore + 1 && store.apps.first { $0.id == "com.apple.Terminal" }?.options["ascii_mode"] == false, "adds an app, turns an option off")
   store.removeApp("com.apple.dt.Xcode")
   check(!store.apps.contains { $0.id == "com.apple.dt.Xcode" }, "removes an app that Squirrel lists")
+
+  // Squirrel ships presets for many apps nobody has installed; they stay out of the list (and out
+  // of squirrel.custom.yaml) until the app is here or the user asks for it.
+  check(store.isAppListed("com.github.atom", installed: true), "an installed app is listed, preset or not")
+  check(!store.isAppListed("org.gnu.Emacs", installed: false), "an uninstalled preset nobody touched stays off the page")
+  check(store.isAppListed("com.example.Editor", installed: false), "an app the user added stays on the page, installed or not")
+  store.setAppOption("org.gnu.Emacs", "vim_mode", true)
+  check(store.isAppListed("org.gnu.Emacs", installed: false), "a preset the user changed stays too")
+  check(store.squirrel.document.text.contains("org.gnu.Emacs"), "it is written to squirrel.custom.yaml")
 
   store.setLook(.native)
   store.applyRecommendedLook()

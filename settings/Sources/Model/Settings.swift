@@ -472,11 +472,21 @@ extension SettingsStore {
       for option in entry.value.mapValue ?? [] {
         options[option.key] = option.value.boolValue
       }
-      return options.isEmpty ? nil : AppEntry(id: entry.key, options: options)
+      guard !options.isEmpty else { return nil }
+      let app = AppEntry(id: entry.key, options: options)
+      return isAppListed(entry.key, installed: app.url != nil) ? app : nil
     }.sorted {
-      // Installed apps first: Squirrel lists many that are not.
+      // Installed apps first: a few are not (the ones the user added without them being there).
       ($0.url == nil ? 1 : 0, $0.name.lowercased()) < ($1.url == nil ? 1 : 0, $1.name.lowercased())
     }
+  }
+
+  /// Whether an app with a preset belongs on the page: installed here, or the user set something
+  /// for it (added it, or changed one of its options). Squirrel ships presets for many apps most
+  /// people do not have — editors, terminals, IM clients — so that they take effect the moment one
+  /// of those apps is installed; until then they stay in squirrel.yaml without cluttering this list.
+  func isAppListed(_ id: String, installed: Bool) -> Bool {
+    installed || squirrel.document.values().contains { $0.key == "app_options/\(id)" || $0.key.hasPrefix("app_options/\(id)/") }
   }
 
   func setAppOption(_ app: String, _ option: String, _ enabled: Bool) {
