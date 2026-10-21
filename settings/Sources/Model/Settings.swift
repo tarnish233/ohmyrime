@@ -228,11 +228,6 @@ extension SettingsStore {
     set(defaults, "schema_list", .list(ids.map { .map([YAMLEntry(key: "schema", value: .scalar($0))]) }))
   }
 
-  /// Schemas other schemas use (melt_eng, radical_pinyin…), hidden unless enabled.
-  var dependencySchemas: Set<String> {
-    Set(schemas.flatMap(\.dependencies))
-  }
-
   func switchKey(_ key: SwitchKey) -> String {
     string(defaults, "ascii_composer/switch_key/\(key.rawValue)") ?? "noop"
   }

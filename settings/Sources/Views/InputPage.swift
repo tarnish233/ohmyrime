@@ -50,15 +50,15 @@ struct InputPage: View {
 
   // MARK: Schemas
 
-  private var orderedSchemas: (enabled: [SchemaInfo], more: [SchemaInfo], others: [SchemaInfo]) {
+  private var orderedSchemas: (enabled: [SchemaInfo], rest: [SchemaInfo]) {
     let enabledIDs = store.enabledSchemas
     let byID = Dictionary(store.schemas.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
     let enabled = enabledIDs.map {
       byID[$0] ?? SchemaInfo(id: $0, name: $0 == "rime_ice" ? "雾凇拼音" : $0, dependencies: [], bundled: false, missing: true)
     }
-    let dependencies = store.dependencySchemas
+    // 雾凇拼音自带好几个双拼方案，加上鼠须管自带的，没启用的都收起来：大多数人用不到，全摆在面上太满。
     let rest = store.schemas.filter { !enabledIDs.contains($0.id) }
-    return (enabled, rest.filter { !$0.bundled && !dependencies.contains($0.id) }, rest.filter { $0.bundled || dependencies.contains($0.id) })
+    return (enabled, rest)
   }
 
   @ViewBuilder
@@ -68,9 +68,10 @@ struct InputPage: View {
       ForEach(Array(schemas.enabled.enumerated()), id: \.element.id) { index, schema in
         schemaRow(schema, enabled: true, index: index, count: schemas.enabled.count)
       }
-      ForEach(schemas.more) { schemaRow($0, enabled: false, index: 0, count: 0) }
-      DisclosureGroup("鼠须管自带及其他方案", isExpanded: $showsAllSchemas) {
-        ForEach(schemas.others) { schemaRow($0, enabled: false, index: 0, count: 0) }
+      if !schemas.rest.isEmpty {
+        DisclosureGroup("更多方案（\(schemas.rest.count)）", isExpanded: $showsAllSchemas) {
+          ForEach(schemas.rest) { schemaRow($0, enabled: false, index: 0, count: 0) }
+        }
       }
     } header: {
       Text("输入方案")
