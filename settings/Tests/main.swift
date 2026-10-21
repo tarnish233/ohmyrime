@@ -405,6 +405,30 @@ check(UpdateCheck.parseChecksum("不是校验值") == nil, "不是校验值就�
 check(UpdateCheck.describe(URLError(.notConnectedToInternet)) == "没有网络"
         && UpdateCheck.describe(URLError(.timedOut)) == "连接 GitHub 超时", "网络错误的说明")
 
+// MARK: - The fallback save
+
+print("== the fallback save")
+MainActor.assumeIsolated {
+  let store = SettingsStore()
+  store.deploysAfterSaving = false
+  // A change that does not get written out on its own: the app is suspended, or the wait for
+  // Squirrel's answer never ends. The fallback writes it out anyway, so the toolbar cannot say
+  // 「保存中…」 forever.
+  SettingsStore.fallbackDelay = 0.2
+  let url = RimePaths.userDir.appending(component: "squirrel.custom.yaml")
+  let before = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+  store.set(store.squirrel, "style/glass_style", .scalar("clear"))
+  check(store.hasUnsavedChanges, "the change is not on disk yet")
+  let deadline = Date().addingTimeInterval(3)
+  while store.hasUnsavedChanges && Date() < deadline {
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+  }
+  check(!store.hasUnsavedChanges, "the fallback wrote it out")
+  let after = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+  check(after != before && after.contains("glass_style"), "and the file really changed", String(after.suffix(40)))
+  SettingsStore.fallbackDelay = 10
+}
+
 // MARK: - The deploy status
 
 print("== deploy status")

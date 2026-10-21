@@ -24,6 +24,9 @@ final class SettingsStore {
   private(set) var saveError: String?
   /// Off in tests: save without asking Squirrel to deploy.
   var deploysAfterSaving = true
+  /// How many seconds the fallback waits before writing the changes out whatever the state is.
+  /// Short in the tests, which cannot wait ten of them.
+  nonisolated(unsafe) static var fallbackDelay: Double = 10
   @ObservationIgnored private var schemaFiles: [String: ConfigFile] = [:]
   @ObservationIgnored private var saveTask: Task<Void, Never>?
   @ObservationIgnored private var installingIce = false
@@ -98,6 +101,32 @@ final class SettingsStore {
   func changed() {
     revision += 1
     scheduleSave()
+    diagnose("changed")
+  }
+
+  /// SQUIRREL_SETTINGS_DIAG=<file>: append the state that matters for saving, to find out why the
+  /// toolbar says 「保存中」 forever. Only when the environment variable is set.
+  private func diagnose(_ what: String) {
+    guard let path = ProcessInfo.processInfo.environment["SQUIRREL_SETTINGS_DIAG"] else { return }
+    let dirty = allFiles.filter(\.isDirty).map { $0.fileName }
+    let problems = allFiles.compactMap { $0.problem }
+    var line = "\(Date().formatted(date: .omitted, time: .standard)) \(what)"
+    line += " rev=\(revision) dirty=\(dirty.isEmpty ? "-" : dirty.joined(separator: ","))"
+    line += " phrases=\(phrases.isDirty) install=\(installation.isDirty)"
+    line += " deploy=\(deployer.state) slow=\(deployer.isSlow) lastFinish=\(deployer.lastFinish.map { $0.formatted(date: .omitted, time: .standard) } ?? "-")"
+    line += " nextSafe=\(deployer.nextSafeSave.map { String(format: "%.2f", $0.timeIntervalSinceNow) } ?? "-")"
+    line += " iceRunning=\(iceInstaller.isRunning)"
+    line += " err=\(saveError ?? "-")"
+    if !problems.isEmpty { line += " problem=\(problems.joined(separator: ";"))" }
+    line += "\n"
+    NSLog("OHMYRIME-DIAG %@", line)
+    if let handle = FileHandle(forWritingAtPath: path) {
+      handle.seekToEndOfFile()
+      handle.write(Data(line.utf8))
+      try? handle.close()
+    } else {
+      try? Data(line.utf8).write(to: URL(fileURLWithPath: path))
+    }
   }
 
   func binding(_ file: ConfigFile, _ path: String, default fallback: Bool) -> Binding<Bool> {
@@ -118,23 +147,58 @@ final class SettingsStore {
 
   // MARK: Saving
 
+  /// macOS suspends an app that is in the background for a while: its timers and tasks stop until
+  /// it comes back. A pending save must not wait for that, or the toolbar would say 「保存中…」
+  /// for as long as the app stays in the background. (The same for the wait for Squirrel's answer:
+  /// see Deployer.)
+  private var saveActivity: NSObjectProtocol?
+
+  private func beginSaveActivity() {
+    guard saveActivity == nil else { return }
+    saveActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled],
+                                                        reason: "等设置保存")
+  }
+
+  private func endSaveActivity() {
+    guard let saveActivity else { return }
+    ProcessInfo.processInfo.endActivity(saveActivity)
+    self.saveActivity = nil
+  }
+
   func scheduleSave() {
     saveTask?.cancel()
+    beginSaveActivity()
     saveTask = Task { [weak self] in
       try? await Task.sleep(for: .milliseconds(700))
       guard !Task.isCancelled else { return }
       self?.saveNow()
+    }
+    // A last resort: if the changes are still not on disk ten seconds later, something went wrong
+    // (the app was suspended, the wait for Squirrel never ended…). Write them out now, whatever
+    // the state is — the toolbar saying 「保存中…」 forever is worse than one extra write.
+    Task { [weak self] in
+      try? await Task.sleep(for: .seconds(Self.fallbackDelay))
+      guard let self, self.hasUnsavedChanges else { return }
+      self.diagnose("兜底：十秒后还没存上，直接写盘")
+      let saved = self.writeChanges()
+      if !saved.isEmpty && self.deploysAfterSaving {
+        self.deployer.deploy(saved: saved, styleOnly: false)
+      }
+      self.endSaveActivity()
     }
   }
 
   /// Saves what changed and asks Squirrel to deploy; waits for a running deploy first, and for the
   /// next second after the last one (see Deployer.nextSafeSave), unless `immediately` (quitting).
   func saveNow(immediately: Bool = false) {
+    diagnose("saveNow(enter)")
     saveTask?.cancel()
     saveTask = nil
     // Not while rime-ice is copied in either: Squirrel would deploy a half-copied folder.
     if !immediately && deploysAfterSaving && (deployer.state == .deploying || deployer.nextSafeSave != nil || iceInstaller.isRunning) {
       let wait = max(0.25, deployer.nextSafeSave?.timeIntervalSinceNow ?? 0)
+      // The app must not be suspended while it waits (see beginSaveActivity).
+      beginSaveActivity()
       saveTask = Task { [weak self] in
         try? await Task.sleep(for: .seconds(wait))
         guard !Task.isCancelled else { return }
@@ -144,9 +208,12 @@ final class SettingsStore {
     }
     let lookOnly = onlyLookChanged
     let saved = writeChanges()
+    diagnose("saveNow(wrote \(saved.count))")
     if !saved.isEmpty && deploysAfterSaving {
       deployer.deploy(saved: saved, styleOnly: lookOnly && saved == [squirrel.customURL])
     }
+    endSaveActivity()
+    diagnose("saveNow(leave)")
   }
 
   /// Whether the only unsaved changes are to Squirrel's look: then Squirrel reloads it without
@@ -226,6 +293,7 @@ final class SettingsStore {
   func discardUnsavedChanges() {
     saveTask?.cancel()
     saveTask = nil
+    endSaveActivity()
     for file in allFiles where file.isDirty {
       file.reload()
     }
