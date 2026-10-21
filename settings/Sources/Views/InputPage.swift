@@ -69,7 +69,11 @@ struct InputPage: View {
         schemaRow(schema, enabled: true, index: index, count: schemas.enabled.count)
       }
       if !schemas.rest.isEmpty {
-        DisclosureGroup("更多方案（\(schemas.rest.count)）", isExpanded: $showsAllSchemas) {
+        // Not SwiftUI's DisclosureGroup: its content sits right under the triangle with no room
+        // to breathe, and only the triangle (not the label) opens it. This is its own row, so
+        // its rows below get the same spacing as any other — and the whole row is the button.
+        moreSchemasRow(count: schemas.rest.count)
+        if showsAllSchemas {
           ForEach(schemas.rest) { schemaRow($0, enabled: false, index: 0, count: 0) }
         }
       }
@@ -78,6 +82,26 @@ struct InputPage: View {
     } footer: {
       Note(schemaFooter)
     }
+  }
+
+  private func moreSchemasRow(count: Int) -> some View {
+    Button {
+      withAnimation(.easeInOut(duration: 0.15)) { showsAllSchemas.toggle() }
+    } label: {
+      HStack(spacing: 6) {
+        Image(systemName: "chevron.right")
+          .font(.caption.weight(.bold))
+          .foregroundStyle(.secondary)
+          .rotationEffect(.degrees(showsAllSchemas ? 90 : 0))
+          .frame(width: 10)
+        Text("更多方案")
+        Text("\(count)")
+          .foregroundStyle(.secondary)
+        Spacer()
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
   }
 
   private var schemaFooter: String {
