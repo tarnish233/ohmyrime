@@ -54,14 +54,16 @@ print("== patch editor")
 let template = try! String(contentsOf: URL(fileURLWithPath: CommandLine.arguments[1]).appending(components: "rime", "squirrel.custom.yaml"), encoding: .utf8)
 var patch = PatchDocument(text: template)
 let keys = (try? patch.entries().map(\.key)) ?? []
-check(keys.count == 23 && keys.first == "style/candidate_list_layout", "reads the template's \(keys.count) entries")
+check(keys.count == 39 && keys.first == "style/candidate_list_layout", "reads the template's \(keys.count) entries")
 check(patch.value("style/border_width")?.doubleValue == 9.5 && patch.value("style/font_face")?.scalar == "PingFang SC", "reads values")
 try! patch.set("style/font_point", .int(18))
 try! patch.set("style/new_key", .scalar("a b"))
-try! patch.remove("style/motion")
+// The template's actual last entry, so removing it (like setting the new key) stays near the end.
+check(keys.last == "app_options/com.apple.Safari/ascii_mode", "the template still ends the way this test expects")
+try! patch.remove("app_options/com.apple.Safari/ascii_mode")
 let changedLines = zip(template.components(separatedBy: "\n"), patch.text.components(separatedBy: "\n")).filter { $0 != $1 }
 check(patch.value("style/font_point")?.intValue == 18 && patch.text.contains("  style/font_point: 18\n"), "replaces a value in place")
-check(patch.text.contains("  style/new_key: 'a b'\n") && !patch.text.contains("style/motion:"), "adds after the last entry, removes")
+check(patch.text.contains("  style/new_key: 'a b'\n") && !patch.text.contains("app_options/com.apple.Safari"), "adds after the last entry, removes")
 check(patch.text.contains("# 动效：展开 0.20 s") && changedLines.count <= 2, "comments and other lines stay (\(changedLines.count) changed before the end)")
 
 var commented = PatchDocument(text: "# head\npatch:\n  # about a\n  \"a/b\": \"x # y\"  # note\n# column 0 comment\n  list:\n    - 1\n\n    # - 2\n    - 3\n  c: 3\nother: 1\n")
@@ -286,6 +288,14 @@ if FileManager.default.fileExists(atPath: iceZip.path) {
       check(!manager.fileExists(atPath: folder.appending(component: name).path), "rime-ice's \(name) is not installed")
     }
     check(manager.fileExists(atPath: folder.appending(component: "squirrel.custom.yaml").path), "the ohmyrime template fills in squirrel.custom.yaml")
+    // ohmyrime only ships two 默认英文 presets (Squirrel's own list has many more, for apps most
+    // people do not have); its own bug workarounds (not about default typing mode) are untouched.
+    check(store.bool(store.squirrel, "app_options/com.apple.Safari/ascii_mode") == true, "adds a Safari preset")
+    check(store.bool(store.squirrel, "app_options/com.apple.Terminal/ascii_mode") == true
+          && store.bool(store.squirrel, "app_options/com.apple.Terminal/no_inline") == true, "keeps Squirrel's own Terminal preset")
+    check(!store.apps.contains { $0.id == "com.github.atom" } && !store.apps.contains { $0.id == "org.gnu.Emacs" },
+          "turns off the other default-ascii presets")
+    check(store.bool(store.squirrel, "app_options/com.google.Chrome/inline") == true, "a bug workaround, not a preference, stays")
     let backups = (try? manager.subpathsOfDirectory(atPath: RimePaths.backupDir.path)) ?? []
     check(backups.contains { $0.hasSuffix(".tar.gz") }, "backs the folder up first", backups.joined(separator: ", "))
     check(!manager.fileExists(atPath: work.appending(components: "cache", "full").path)

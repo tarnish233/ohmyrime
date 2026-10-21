@@ -45,3 +45,25 @@ patch:
 
   # 动效：展开 0.20 s、收起 0.16 s，文字淡入；系统开启「减弱动态效果」时不播放
   style/motion: true
+
+  # 鼠须管自带一大批常见应用（终端、编辑器、Alfred 之类）的默认英文预设，但大多数人
+  # 机器上根本没装这些。ohmyrime 只保留终端和 Safari 两个默认英文预设，想要别的自己在
+  # 「鼠须管设置 → 应用」页里加。下面这几条设成空，相当于关掉对应预设（规避 bug 用的那几条——
+  # Chrome、Edge、Telegram、Alacritty——不动，它们和「默认英文」是两回事，删了候选框会错位）。
+  app_options/com.apple.Spotlight: {}
+  app_options/com.alfredapp.Alfred: {}
+  app_options/com.runningwithcrayons.Alfred-2: {}
+  app_options/com.blacktree.Quicksilver: {}
+  app_options/com.googlecode.iterm2: {}
+  app_options/org.vim.MacVim: {}
+  app_options/com.apple.dt.Xcode: {}
+  app_options/com.barebones.textwrangler: {}
+  app_options/com.macromates.TextMate.preview: {}
+  app_options/com.github.atom: {}
+  app_options/com.microsoft.VSCode: {}
+  app_options/com.sublimetext.2: {}
+  app_options/org.gnu.Aquamacs: {}
+  app_options/org.gnu.Emacs: {}
+  app_options/co.zeit.hyper: {}
+  # 鼠须管本来没这条，这里新增
+  app_options/com.apple.Safari/ascii_mode: true
