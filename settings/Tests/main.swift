@@ -405,6 +405,26 @@ check(UpdateCheck.parseChecksum("不是校验值") == nil, "不是校验值就�
 check(UpdateCheck.describe(URLError(.notConnectedToInternet)) == "没有网络"
         && UpdateCheck.describe(URLError(.timedOut)) == "连接 GitHub 超时", "网络错误的说明")
 
+// MARK: - The deploy status
+
+print("== deploy status")
+MainActor.assumeIsolated {
+  let deployer = Deployer()
+  check(deployer.state == .idle && !deployer.isSlow, "nothing deployed yet")
+  // The slow marker is what the toolbar shows after a while, so the user gets 「重新部署」
+  // instead of waiting for the 45 s timeout. The test only starts the timer: asking the real
+  // Squirrel to deploy would really deploy the user's configuration.
+  Deployer.slowThreshold = 0.2
+  deployer.startSlowTimer()
+  check(!deployer.isSlow, "not slow yet")
+  let deadline = Date().addingTimeInterval(3)
+  while !deployer.isSlow && Date() < deadline {
+    RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+  }
+  check(deployer.isSlow, "taking longer than usual: the toolbar says so")
+  Deployer.slowThreshold = 8
+}
+
 print("")
 print(failures == 0 ? "ALL CHECKS PASSED" : "\(failures) CHECK(S) FAILED")
 exit(failures == 0 ? 0 : 1)

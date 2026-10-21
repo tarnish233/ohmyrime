@@ -22,10 +22,17 @@ final class Deployer {
 
   static let squirrelIdentifier = "im.rime.inputmethod.Squirrel"
   private(set) var state: State = .idle
+  /// A deploy most are done well within (see the explanation in ContentView): still 「部署中」 or
+  /// 「保存中」 past this many seconds without an answer, so the toolbar offers 「重新部署」 instead
+  /// of just sitting there — well before the 45 s timeout gives up and explains why.
+  private(set) var isSlow = false
+  /// How many seconds that is. Shorter in the tests, which cannot wait 8 of them.
+  nonisolated(unsafe) static var slowThreshold: Double = 8
   /// Error lines Rime logged during the last deploy.
   private(set) var errors: [String] = []
   private var startedAt = Date.distantPast
   private var timeout: Task<Void, Never>?
+  private var slowTimer: Task<Void, Never>?
   /// When the last deploy ended.
   private(set) var lastFinish: Date?
   /// Files saved for the running deploy, and whether it was asked for again.
@@ -74,6 +81,8 @@ final class Deployer {
     retried = false
     self.styleOnly = styleOnly
     timeout?.cancel()
+    slowTimer?.cancel()
+    isSlow = false
     if activity == nil {
       activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled],
                                                         reason: "等鼠须管回应部署")
@@ -97,6 +106,23 @@ final class Deployer {
       self.state = .noAnswer
       self.errors = Self.errorLines(since: self.startedAt)
       self.endActivity()
+    }
+    startSlowTimer()
+  }
+
+  /// The 「有点慢」 marker: the toolbar offers 「重新部署」 instead of just waiting. Asking again
+  /// (SettingsStore.redeploy → deploy) resets it.
+  ///
+  /// On its own, for the tests: they must not ask the real Squirrel to deploy (it would really
+  /// deploy the user's configuration). Only the cancel matters here: the timer is cancelled when
+  /// the deploy ends, so it cannot fire after that.
+  func startSlowTimer() {
+    slowTimer?.cancel()
+    isSlow = false
+    slowTimer = Task { [weak self] in
+      try? await Task.sleep(for: .seconds(Self.slowThreshold))
+      guard !Task.isCancelled else { return }
+      self?.isSlow = true
     }
   }
 
@@ -135,6 +161,8 @@ final class Deployer {
       return
     }
     timeout?.cancel()
+    slowTimer?.cancel()
+    isSlow = false
     errors = Self.errorLines(since: startedAt)
     state = outcome == "failure" ? .failed(Date()) : .succeeded(Date())
     endActivity()

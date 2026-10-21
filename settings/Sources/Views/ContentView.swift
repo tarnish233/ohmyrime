@@ -231,6 +231,9 @@ struct DeployStatusButton: View {
   private var indicator: some View {
     if store.incompletePhrases > 0 {
       Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+    } else if deployer.isSlow {
+      // Taking longer than usual: show it, so waiting is not the only option.
+      Image(systemName: "clock.badge.exclamationmark").foregroundStyle(.orange)
     } else if store.hasUnsavedChanges || deployer.state == .deploying {
       ProgressView().controlSize(.small)
     } else {
@@ -249,6 +252,9 @@ struct DeployStatusButton: View {
     // Not 「保存中…」: nothing is actually saving, and it would stay that way forever — say why.
     if store.incompletePhrases > 0 {
       return "短语没填完"
+    }
+    if deployer.isSlow {
+      return "有点慢"
     }
     if store.hasUnsavedChanges {
       return "保存中…"
@@ -293,6 +299,7 @@ struct DeployDetails: View {
         }
         Spacer()
       }
+      .disabled(store.deployer.state == .deploying && !store.deployer.isSlow)
     }
     .padding(16)
     .frame(width: 380)
@@ -301,6 +308,9 @@ struct DeployDetails: View {
   private var summary: String {
     if store.incompletePhrases > 0 {
       return store.incompletePhrases == 1 ? "有一条短语还没填完" : "有 \(store.incompletePhrases) 条短语还没填完"
+    }
+    if store.deployer.isSlow {
+      return "这次比平时慢"
     }
     switch store.deployer.state {
     case .idle: return "设置会在改动后自动保存并生效"
@@ -314,6 +324,9 @@ struct DeployDetails: View {
   private var explanation: String {
     if store.incompletePhrases > 0 {
       return "「短语」页有新加的短语还没填好短语和编码，所以不会存盘，也不是卡住了。去短语页填完或者删掉那一行就行。"
+    }
+    if store.deployer.isSlow {
+      return "改动已经写进 ~/Library/Rime，但鼠须管还没回话。装新方案时第一次部署要十几秒，属正常；再等一会儿还不动，就点「重新部署」再问一次（不会丢改动）。"
     }
     switch store.deployer.state {
     case .failed: return "Rime 没能读懂改过的配置，下面是日志里的错误。可以改回刚才的设置，或打开日志查看。"
