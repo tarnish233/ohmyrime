@@ -56,4 +56,23 @@ if [ -f "$work/ice/Rime/rime_ice.schema.yaml" ]; then
   expect "^csaz +=> 1\.测试安装" "保留了用户的自定义短语"
   expect "librime 错误日志：0 条" "部署没有错误"
 fi
+# 全新文件夹（还没 custom_phrase.txt）：短语预设用 ohmyrime 自己的精简示例，不是雾凇拼音那份大文件
+if [ -f "$root/.cache/rime-ice/full.zip" ]; then
+  echo "== 全新安装雾凇拼音：短语预设"
+  fresh="$work/fresh-ice"
+  rm -rf "$fresh"
+  mkdir -p "$fresh/Rime" "$fresh/cache"
+  cp "$root/.cache/rime-ice/full.zip" "$fresh/cache/"
+  OHMYRIME_RIME_DIR="$fresh/Rime" OHMYRIME_CACHE_DIR="$fresh/cache" OHMYRIME_BACKUP_DIR="$fresh/backups" OHMYRIME_NO_RELOAD=1 \
+    bash scripts/rime-ice.sh --offline > /dev/null
+  phrase_file="$fresh/Rime/custom_phrase.txt"
+  if grep -q "又双叒叕	uuuu" "$phrase_file" 2>/dev/null && ! grep -q "^go	go$" "$phrase_file" 2>/dev/null; then
+    echo "  ✓ 用的是 ohmyrime 自己的精简示例，不是雾凇拼音那份"
+  else
+    echo "  ✗ 用的是 ohmyrime 自己的精简示例，不是雾凇拼音那份"; fail=1
+  fi
+  entries=$(grep -v '^#' "$phrase_file" | grep -c "$(printf '\t')" || true)
+  if [ "${entries:-0}" -eq 6 ]; then echo "  ✓ 只有 6 条，不是雾凇拼音的一大份（$entries 条）"; else echo "  ✗ 条数不对（$entries 条）"; fail=1; fi
+fi
+
 exit $fail

@@ -48,7 +48,7 @@ cp "$squirrel_app/Contents/Resources/Rime.icns" "$app/Contents/Resources/AppIcon
 # 安装、卸载、雾凇拼音的脚本，和它们补上的 ohmyrime 配置模板
 mkdir -p "$app/Contents/Resources/scripts" "$app/Contents/Resources/rime" "$app/Contents/Resources/Payload"
 cp scripts/install.sh scripts/uninstall.sh scripts/rime-ice.sh "$app/Contents/Resources/scripts/"
-cp rime/*.yaml "$app/Contents/Resources/rime/"
+cp rime/*.yaml rime/custom_phrase.txt "$app/Contents/Resources/rime/"
 # 安装器带的鼠须管和雾凇拼音
 ditto -c -k --sequesterRsrc --keepParent "$squirrel_app" "$app/Contents/Resources/Payload/Squirrel.zip"
 cp "$ice" "$app/Contents/Resources/Payload/rime-ice.zip"

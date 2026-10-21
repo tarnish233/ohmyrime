@@ -5,7 +5,8 @@
 #   - 保留 *.custom.yaml、用户词库（*.userdb）、同步目录等个人数据；
 #   - 不安装它的 squirrel.yaml / weasel.yaml：外观沿用 ohmyrime 版鼠须管的配置
 #     （卷轴模式只在横排生效，而雾凇拼音的 squirrel.yaml 默认竖排）；
-#   - custom_phrase.txt 只在不存在时复制，不覆盖你加的短语。
+#   - custom_phrase.txt 只在不存在时复制，不覆盖你加的短语；用 ohmyrime 自己的精简示例
+#     （rime/custom_phrase.txt），不用雾凇拼音自带的那份。
 # 安装前把 ~/Library/Rime（不含 build/）备份到 .backup/；文件夹是空的就不用备份。
 #
 #   scripts/rime-ice.sh               下载最新版并安装
@@ -70,7 +71,14 @@ fi
 # 4. 安装
 rsync -a --exclude squirrel.yaml --exclude weasel.yaml --exclude LICENSE --exclude custom_phrase.txt \
   "$work/" "$rime_dir/"
-[ -e "$rime_dir/custom_phrase.txt" ] || cp "$work/custom_phrase.txt" "$rime_dir/"
+if [ ! -e "$rime_dir/custom_phrase.txt" ]; then
+  # 优先用 ohmyrime 自己的精简示例；它不在的话（比如还没更新这份脚本的旧版 App）就用雾凇拼音自带的那份。
+  if [ -e "$templates/custom_phrase.txt" ]; then
+    cp "$templates/custom_phrase.txt" "$rime_dir/"
+  else
+    cp "$work/custom_phrase.txt" "$rime_dir/"
+  fi
+fi
 for file in "$templates"/*.yaml; do
   [ -e "$file" ] || continue
   target="$rime_dir/$(basename "$file")"

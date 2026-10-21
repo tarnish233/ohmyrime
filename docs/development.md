@@ -204,7 +204,7 @@ patch:
 | 输入 | 启用哪些方案和顺序（找不到方案文件的标「未安装」），每页候选数，中文标点下 `/` 打成「、」，左右 Shift / Control / Caps Lock 怎样切换中英，翻页键（`-` `=` / `,` `.` / `[` `]` / Tab），以词定字，方案选单快捷键 | `default.custom.yaml` |
 | 雾凇拼音 | 安装或更新雾凇拼音；新输入框的默认状态（中英、标点、简繁、Emoji、全角、单字优先），模糊音（z/zh、n/l、an/ang 等 10 组） | `rime_ice.custom.yaml`，启用的双拼方案也一起改 |
 | 应用 | 按应用设置默认英文、不内嵌编码、Vim 模式；可以添加、移除应用。默认只有终端和 Safari 两个预设；这台机器没装、也没手动改过的预设不显示，装了或者改过才会出现 | `squirrel.custom.yaml` 的 `app_options` |
-| 短语 | 自定义短语表格：短语、编码、权重，可以搜索 | `custom_phrase.txt` |
+| 短语 | 自定义短语表格：短语、编码、权重，可以搜索。新装默认只有两组示例（演示同码多条怎么排序），不是雾儙拼音自带的那大一大份 | `custom_phrase.txt` |
 | 词库与部署 | 用户词库大小，同步文件夹（可以设到 iCloud 云盘）、立即同步、备份用户文件夹，部署状态和错误日志；卸载 ohmyrime | `installation.yaml` 的 `sync_dir` |
 | 关于 | 版本、检查更新并下载安装、已装的鼠须管和雾凇拼音版本、项目链接 | App 自己的偏好设置（上次检查更新的时间） |
 
@@ -297,7 +297,7 @@ scripts/rime-ice.sh --offline   # 用 .cache 里上次下载的版本
 和官方的「清空用户目录再复制」不同，这个脚本：
 - 保留 `*.custom.yaml`、用户词库和同步目录；
 - 不装雾凇拼音的 `squirrel.yaml`：外观沿用本 fork 的配置，因为卷轴模式要横排，而它默认竖排；
-- `custom_phrase.txt` 只在没有时才复制；
+- `custom_phrase.txt` 只在没有时才复制，用 `rime/custom_phrase.txt`（ohmyrime 自己的精简示例，两组六条），不用雾儙拼音自带的那份；
 - 每次安装前，把 `~/Library/Rime`（不含 `build/`）备份到 `.backup/Rime-<时间>.tar.gz`。
 
 脚本不设置也不读取代理：要的话自己 `export https_proxy=…`，curl 会用；断线会自动重试（`--retry-all-errors`）。
