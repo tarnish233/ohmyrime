@@ -230,6 +230,12 @@ patch:
 - librime 按秒比较文件时间，同一秒内的第二次保存会被当成没改。所以 App 会等过了上次部署的那一秒再保存，必要时再请求一次。
 - 「短语」页有没填完的新短语时，`custom_phrase.txt` 不会写盘，是故意的（不写半成品）。这种情况工具栏不显示「保存中…」
   （那样会一直转圈，像卡住了），而是显示「短语没填完」，点过去有个「去短语页看看」的按钮（`SettingsStore.incompletePhrases`）。
+- 鼠须管的 `--reload` 自己有一句注释：macOS 会挂起发给「不在前台」的 App 的分布式通知，靠 `deliverImmediately`
+  绕过去（鼠须管发给设置 App 的 `SquirrelDeployDidFinishNotification` 也这样发）。但 `deliverImmediately`
+  只保证发得出去，这台 App 自己如果被系统判定为「闲置太久」（App Nap），处理通知、甚至超时定时器本身都可能被
+  挂起——实测遇到过部署完成的消息迟迟收不到，工具栏卡在「保存中…」，退出重开这个 App 立刻恢复。
+  `Deployer` 现在在等鼠须管回应期间用 `ProcessInfo.beginActivity` 告诉系统「先别把我挂起」，回应或者 45
+  秒超时后再放开。
 
 和鼠须管之间的接口（`squirrel/` 分支 `ohmyrime`）：
 

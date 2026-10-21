@@ -38,6 +38,11 @@ final class Deployer {
   /// How long the last request took Squirrel, from asking to its answer.
   var lastDuration: TimeInterval? { lastFinish.map { $0.timeIntervalSince(startedAt) } }
   private var observer: NSObjectProtocol?
+  /// AppKit can suspend distributed-notification delivery (and the app's own timers) once this
+  /// app is backgrounded for a while — the same thing Squirrel's own --reload works around on its
+  /// side (see Main.swift). Held from the moment a deploy is asked for until it answers (or times
+  /// out), so a reply arriving while this app is not frontmost still gets through promptly.
+  private var activity: NSObjectProtocol?
 
   init() {
     observer = DistributedNotificationCenter.default().addObserver(forName: .init("SquirrelDeployDidFinishNotification"), object: nil, queue: .main) { [weak self] note in
@@ -69,6 +74,10 @@ final class Deployer {
     retried = false
     self.styleOnly = styleOnly
     timeout?.cancel()
+    if activity == nil {
+      activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled],
+                                                        reason: "等鼠须管回应部署")
+    }
     if isSquirrelRunning {
       postReload()
     } else {
@@ -87,6 +96,7 @@ final class Deployer {
       guard !Task.isCancelled, let self, self.state == .deploying else { return }
       self.state = .noAnswer
       self.errors = Self.errorLines(since: self.startedAt)
+      self.endActivity()
     }
   }
 
@@ -97,6 +107,12 @@ final class Deployer {
 
   func syncUserData() {
     DistributedNotificationCenter.default().postNotificationName(.init("SquirrelSyncNotification"), object: nil, userInfo: nil, deliverImmediately: true)
+  }
+
+  private func endActivity() {
+    guard let activity else { return }
+    ProcessInfo.processInfo.endActivity(activity)
+    self.activity = nil
   }
 
   private func finished(_ outcome: String?) {
@@ -121,6 +137,7 @@ final class Deployer {
     timeout?.cancel()
     errors = Self.errorLines(since: startedAt)
     state = outcome == "failure" ? .failed(Date()) : .succeeded(Date())
+    endActivity()
   }
 
   /// Lines of Rime's error log written since a time ("E20261019 22:19:20.351529 …").
