@@ -209,6 +209,16 @@ MainActor.assumeIsolated {
   store.applyRecommendedLook()
   check(store.look == .liquidGlass, "recommended look")
 
+  // An unfinished phrase (added, never filled in) keeps custom_phrase.txt from saving, on purpose;
+  // the store should say so (incompletePhrases), not just sit "dirty" forever like a stuck save.
+  let draft = Phrase(text: "", code: "")
+  store.phrases.add(draft)
+  store.changed()
+  check(store.incompletePhrases == 1 && store.hasUnsavedChanges, "an unfinished phrase blocks saving and says so")
+  store.phrases.remove([draft.id])
+  store.changed()
+  check(store.incompletePhrases == 0, "removing it clears the block")
+
   let phraseCount = store.phrases.phrases.count
   store.phrases.add(Phrase(text: "测试短语", code: "cshi", weight: "100"))
   store.setSyncDir(sandbox.appending(component: "sync-test").path)

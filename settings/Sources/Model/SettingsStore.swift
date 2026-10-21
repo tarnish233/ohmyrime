@@ -213,6 +213,14 @@ final class SettingsStore {
     return allFiles.contains(where: \.isDirty) || phrases.isDirty || installation.isDirty
   }
 
+  /// A phrase added (or edited) but not finished (missing text or code): custom_phrase.txt is
+  /// left dirty until it is completed or removed, on purpose, so nothing half-typed is written.
+  /// The toolbar should say so instead of spinning forever as if a save were stuck.
+  var incompletePhrases: Int {
+    _ = revision
+    return phrases.phrases.filter { $0.problem != nil }.count
+  }
+
   /// Drops the changes not saved yet: uninstalling deletes the user folder, and saving them when
   /// the app quits would bring it back.
   func discardUnsavedChanges() {

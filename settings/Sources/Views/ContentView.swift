@@ -204,6 +204,7 @@ struct EnglishOnlyBanner: View {
 /// Saved and deployed, deploying, or why not; details and 「重新部署」 in a popover.
 struct DeployStatusButton: View {
   @Environment(SettingsStore.self) private var store
+  @Environment(AppState.self) private var state
   @State private var showsDetails = false
 
   var body: some View {
@@ -218,8 +219,9 @@ struct DeployStatusButton: View {
     }
     .help("部署状态")
     .popover(isPresented: $showsDetails, arrowEdge: .bottom) {
-      DeployDetails()
+      DeployDetails(isPresented: $showsDetails)
         .environment(store)
+        .environment(state)
     }
   }
 
@@ -227,7 +229,9 @@ struct DeployStatusButton: View {
 
   @ViewBuilder
   private var indicator: some View {
-    if store.hasUnsavedChanges || deployer.state == .deploying {
+    if store.incompletePhrases > 0 {
+      Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
+    } else if store.hasUnsavedChanges || deployer.state == .deploying {
       ProgressView().controlSize(.small)
     } else {
       switch deployer.state {
@@ -242,6 +246,10 @@ struct DeployStatusButton: View {
   }
 
   private var title: String {
+    // Not 「保存中…」: nothing is actually saving, and it would stay that way forever — say why.
+    if store.incompletePhrases > 0 {
+      return "短语没填完"
+    }
     if store.hasUnsavedChanges {
       return "保存中…"
     }
@@ -257,6 +265,8 @@ struct DeployStatusButton: View {
 
 struct DeployDetails: View {
   @Environment(SettingsStore.self) private var store
+  @Environment(AppState.self) private var state
+  @Binding var isPresented: Bool
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -272,8 +282,15 @@ struct DeployDetails: View {
         .frame(maxHeight: 160)
       }
       HStack {
-        Button("重新部署") { store.redeploy() }
-        Button("打开日志文件夹") { NSWorkspace.shared.open(RimePaths.logDir) }
+        if store.incompletePhrases > 0 {
+          Button("去短语页看看") {
+            state.page = .phrases
+            isPresented = false
+          }
+        } else {
+          Button("重新部署") { store.redeploy() }
+          Button("打开日志文件夹") { NSWorkspace.shared.open(RimePaths.logDir) }
+        }
         Spacer()
       }
     }
@@ -282,22 +299,28 @@ struct DeployDetails: View {
   }
 
   private var summary: String {
+    if store.incompletePhrases > 0 {
+      return store.incompletePhrases == 1 ? "有一条短语还没填完" : "有 \(store.incompletePhrases) 条短语还没填完"
+    }
     switch store.deployer.state {
-    case .idle: "设置会在改动后自动保存并生效"
-    case .deploying: "鼠须管正在部署…"
-    case .succeeded(let date): "\(date.formatted(date: .omitted, time: .standard)) 已生效"
-    case .failed: "部署失败"
-    case .noAnswer: "已保存，但鼠须管没有回应"
+    case .idle: return "设置会在改动后自动保存并生效"
+    case .deploying: return "鼠须管正在部署…"
+    case .succeeded(let date): return "\(date.formatted(date: .omitted, time: .standard)) 已生效"
+    case .failed: return "部署失败"
+    case .noAnswer: return "已保存，但鼠须管没有回应"
     }
   }
 
   private var explanation: String {
+    if store.incompletePhrases > 0 {
+      return "「短语」页有新加的短语还没填好短语和编码，所以不会存盘，也不是卡住了。去短语页填完或者删掉那一行就行。"
+    }
     switch store.deployer.state {
-    case .failed: "Rime 没能读懂改过的配置，下面是日志里的错误。可以改回刚才的设置，或打开日志查看。"
-    case .noAnswer: "改动已写进 ~/Library/Rime，但没收到鼠须管部署完成的消息：鼠须管可能没在运行，或者还是旧版本。在菜单栏输入法菜单里选一次鼠须管，或点「重新部署」。"
+    case .failed: return "Rime 没能读懂改过的配置，下面是日志里的错误。可以改回刚才的设置，或打开日志查看。"
+    case .noAnswer: return "改动已写进 ~/Library/Rime，但没收到鼠须管部署完成的消息：鼠须管可能没在运行，或者还是旧版本。在菜单栏输入法菜单里选一次鼠须管，或点「重新部署」。"
     case .succeeded where store.deployer.lastOutcome == "reloaded":
-      "只改了外观：鼠须管重新载入了外观，Rime 没有重启，各应用里正在输入的内容和中英状态都不受影响。改之前的文件备份在 ~/Library/Application Support/鼠须管设置/Backups。"
-    default: "改动写进 ~/Library/Rime 下的 *.custom.yaml。只改外观时，鼠须管只重新载入外观；其他改动重新部署 Rime，要零点几秒到几秒：「输入」页的改动会重建每个方案（约 3 秒），装新方案时要十几秒。改之前的文件备份在 ~/Library/Application Support/鼠须管设置/Backups。"
+      return "只改了外观：鼠须管重新载入了外观，Rime 没有重启，各应用里正在输入的内容和中英状态都不受影响。改之前的文件备份在 ~/Library/Application Support/鼠须管设置/Backups。"
+    default: return "改动写进 ~/Library/Rime 下的 *.custom.yaml。只改外观时，鼠须管只重新载入外观；其他改动重新部署 Rime，要零点几秒到几秒：「输入」页的改动会重建每个方案（约 3 秒），装新方案时要十几秒。改之前的文件备份在 ~/Library/Application Support/鼠须管设置/Backups。"
     }
   }
 }
